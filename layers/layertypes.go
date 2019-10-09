@@ -146,6 +146,11 @@ var (
 	LayerTypeRMCP                         = gopacket.RegisterLayerType(142, gopacket.LayerTypeMetadata{Name: "RMCP", Decoder: gopacket.DecodeFunc(decodeRMCP)})
 	LayerTypeASF                          = gopacket.RegisterLayerType(143, gopacket.LayerTypeMetadata{Name: "ASF", Decoder: gopacket.DecodeFunc(decodeASF)})
 	LayerTypeASFPresencePong              = gopacket.RegisterLayerType(144, gopacket.LayerTypeMetadata{Name: "ASFPresencePong", Decoder: gopacket.DecodeFunc(decodeASFPresencePong)})
+	LayerTypeProfinet                     = gopacket.RegisterLayerType(145, gopacket.LayerTypeMetadata{Name: "Profinet", Decoder: gopacket.DecodeFunc(decodeProfinet)})
+	LayerTypeProfinetDCP                  = gopacket.RegisterLayerType(146, gopacket.LayerTypeMetadata{Name: "ProfinetDCP", Decoder: gopacket.DecodeFunc(decodeProfinetDCP)})
+	LayerTypeProfinetRT                   = gopacket.RegisterLayerType(147, gopacket.LayerTypeMetadata{Name: "ProfinetRT", Decoder: gopacket.DecodeFunc(decodeProfinetRT)})
+	LayerTypeProfinetIO                   = gopacket.RegisterLayerType(148, gopacket.LayerTypeMetadata{Name: "ProfinetIO", Decoder: gopacket.DecodeFunc(decodeProfinetIO)})
+	LayerTypeProfinetDCERPC               = gopacket.RegisterLayerType(149, gopacket.LayerTypeMetadata{Name: "ProfinetDCERPC", Decoder: gopacket.DecodeFunc(decodeProfinetDCERPC)})
 )
 
 var (
