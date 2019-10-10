@@ -144,6 +144,8 @@ func (p *Profinet) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seriali
 		return err
 	}
 	binary.BigEndian.PutUint16(bytes, uint16(p.FrameID))
+
+	// log.Printf("% x\n", b.Bytes())
 	return nil
 }
 
@@ -281,13 +283,13 @@ func (b *ProfinetDCPBlock) DecodeFromBytes(data []byte, df gopacket.DecodeFeedba
 	b.Suboption = uint8(data[1])
 	b.Length = binary.BigEndian.Uint16(data[2:4])
 	if b.Length > 0 {
-		if len(data[5:]) < int(b.Length) {
+		if len(data[4:]) < int(b.Length) {
 			df.SetTruncated()
 			// TODO still return error here, even if packet is truncated?
 			return 4, errors.New("Profinet DCP block data too small")
 		}
 
-		b.Data = data[5 : b.Length+5]
+		b.Data = data[4 : b.Length+4]
 	}
 
 	// including padding here
@@ -314,7 +316,7 @@ func decodeProfinetDCP(data []byte, p gopacket.PacketBuilder) error {
 
 type ProfinetRT struct {
 	BaseLayer
-	Data           []byte
+	Data           []byte // 40 - 1500 Byte
 	CycleCounter   uint16
 	DataStatus     uint8
 	TransferStatus uint8
@@ -322,22 +324,45 @@ type ProfinetRT struct {
 
 func (p ProfinetRT) LayerType() gopacket.LayerType { return LayerTypeProfinetRT }
 
+func (d *ProfinetRT) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
+	numBytes := int(Max(int64(40), int64(len(d.Data)))) + 4
+	bytes, err := b.PrependBytes(numBytes)
+	if err != nil {
+		log.Println("cannot Prepend numBytes:", numBytes)
+		return err
+	}
+
+	copy(bytes[0:numBytes-4], d.Data)
+	binary.BigEndian.PutUint16(bytes[numBytes-4:numBytes-2], uint16(d.CycleCounter))
+	bytes[numBytes-2] = d.DataStatus
+	bytes[numBytes-1] = d.TransferStatus
+
+	return nil
+}
+
+func (d *ProfinetRT) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+	offset := len(data) - 4
+	d.Data = make([]byte, offset)
+	copy(d.Data, data[0:offset])
+	d.CycleCounter = binary.BigEndian.Uint16(data[offset : offset+2])
+	d.DataStatus = data[offset+2]
+	d.TransferStatus = data[offset+3]
+
+	return nil
+}
+
 func decodeProfinetRT(data []byte, p gopacket.PacketBuilder) error {
 	// assertion, if data is too small
-	// if len(data) < 10 {
-	// 	return errors.New("Malformed Profinet DCP Packet")
-	// }
+	if len(data) < 44 {
+		return errors.New("Malformed Profinet DCP Packet")
+	}
 
-	// d := &ProfinetDCP{}
-
-	// d.ServiceID = PNDCPServiceID(data[0])
-	// d.ServiceType = PNDCPServiceType(data[1])
-	// d.Xid = binary.BigEndian.Uint32(data[2:6])
-	// d.ResponseDelay = binary.BigEndian.Uint16(data[6:8])
-	// d.DCPDataLength = binary.BigEndian.Uint16(data[8:10])
-
-	// fmt.Println(*d)
-	// p.AddLayer(d)
+	d := &ProfinetRT{}
+	err := d.DecodeFromBytes(data, p)
+	if err != nil {
+		return err
+	}
+	p.AddLayer(d)
 
 	return nil
 }
@@ -827,7 +852,21 @@ func (p *ProfinetIOExpectedSubmoduleBlockReq) DecodeFromBytes(data []byte, df go
 		return errors.New("Malformed ProfinetIOExpectedSubmoduleBlockReq")
 	}
 
-	p.NumberOfAPIs = binary.LittleEndian.Uint16(data[0:2])
+	lenPacket := 2
+	p.NumberOfAPIs = binary.BigEndian.Uint16(data[0:2])
+
+	// log.Printf("NumberOfAPIs: %x\n", p.NumberOfAPIs)
+
+	for iAPI := 0; (iAPI < int(p.NumberOfAPIs)) && (len(data[lenPacket:]) > 14); iAPI++ {
+		api := &ProfinetIOSubmoduleAPI{}
+		lenAPI, err := api.DecodeFromBytes(data[lenPacket:], df)
+		if err != nil {
+			log.Println("cannot decode API block")
+			break
+		}
+		p.APIs = append(p.APIs, *api)
+		lenPacket = lenPacket + lenAPI
+	}
 
 	return nil
 }
@@ -841,11 +880,64 @@ type ProfinetIOSubmoduleAPI struct {
 	Submodules        []ProfinetIOSubmodule
 }
 
+func (p *ProfinetIOSubmoduleAPI) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
+	// length without header
+	if len(data) < 14 {
+		return 0, errors.New("Malformed ProfinetIOSubmoduleAPI")
+	}
+
+	lenPacket := 14
+
+	p.No = binary.BigEndian.Uint32(data[0:4])
+	p.SlotNumber = binary.BigEndian.Uint16(data[4:6])
+	p.ModuleIdentNumber = binary.BigEndian.Uint32(data[6:10])
+	p.ModuleProperties = binary.BigEndian.Uint16(data[10:12])
+	p.SubModulesLength = binary.BigEndian.Uint16(data[12:14])
+
+	// log.Printf("\tNo: %x\n", p.No)
+	// log.Printf("\tSlotNumber: %x\n", p.SlotNumber)
+	// log.Printf("\tModuleIdentNumber: %x\n", p.ModuleIdentNumber)
+	// log.Printf("\tModuleProperties: %x\n", p.ModuleProperties)
+	// log.Printf("\tSubModulesLength: %x\n", p.SubModulesLength)
+
+	for iSubmodule := 0; (iSubmodule < int(p.SubModulesLength)) && (len(data[lenPacket:]) > 14); iSubmodule++ {
+		api := &ProfinetIOSubmodule{}
+		lenSubmodule, err := api.DecodeFromBytes(data[lenPacket:], df)
+		if err != nil {
+			log.Println("cannot decode API block")
+			break
+		}
+		lenPacket = lenPacket + lenSubmodule
+	}
+
+	return lenPacket, nil
+}
+
 type ProfinetIOSubmodule struct {
 	SubslotNumber        uint16
 	SubmoduleIdentNumber uint32
 	SubmoduleProperties  uint16
-	DataDescriptions     []ProfinetIODataDescription
+	DataDescription      ProfinetIODataDescription
+}
+
+func (p *ProfinetIOSubmodule) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
+	// length without header
+	if len(data) < 14 {
+		return 0, errors.New("Malformed ProfinetIOSubmodule")
+	}
+
+	p.SubslotNumber = binary.BigEndian.Uint16(data[0:2])
+	p.SubmoduleIdentNumber = binary.BigEndian.Uint32(data[2:6])
+	p.SubmoduleProperties = binary.BigEndian.Uint16(data[6:8])
+	p.DataDescription.Type = binary.BigEndian.Uint16(data[10:12])
+	p.DataDescription.SubmoduleDataLength = binary.BigEndian.Uint16(data[10:12])
+	p.DataDescription.LengthIOCS = data[12]
+	p.DataDescription.LengthIOPS = data[13]
+
+	// log.Printf("\t\tSubslotNumber: %x\n", p.SubslotNumber)
+	// log.Printf("\t\tSubmoduleIdentNumber: %x\n", p.SubmoduleIdentNumber)
+
+	return 14, nil
 }
 
 type ProfinetIODataDescription struct {
