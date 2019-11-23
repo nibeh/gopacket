@@ -240,6 +240,77 @@ type LinkLayerDiscoveryInfo struct {
 	Unknown         []LinkLayerDiscoveryValue // undecoded TLVs
 }
 
+func (i *LinkLayerDiscoveryInfo) ToValues(opts gopacket.SerializeOptions) []LinkLayerDiscoveryValue {
+	var vals []LinkLayerDiscoveryValue
+
+	// TODO use opts
+
+	// PortDescription
+	portDescriptionVal := LinkLayerDiscoveryValue{
+		Type:   LLDPTLVPortDescription,
+		Length: uint16(len(i.PortDescription)),
+		Value:  []byte(i.PortDescription),
+	}
+	vals = append(vals, portDescriptionVal)
+
+	// SysName
+	sysNameVal := LinkLayerDiscoveryValue{
+		Type:   LLDPTLVSysName,
+		Length: uint16(len(i.SysName)),
+		Value:  []byte(i.SysName),
+	}
+	vals = append(vals, sysNameVal)
+
+	// SysDescription
+	sysDescriptionVal := LinkLayerDiscoveryValue{
+		Type:   LLDPTLVSysDescription,
+		Length: uint16(len(i.SysDescription)),
+		Value:  []byte(i.SysDescription),
+	}
+	vals = append(vals, sysDescriptionVal)
+
+	// SysCapabilities
+	sysCapabilitiesLen := 4
+	sysCapabilitiesVal := LinkLayerDiscoveryValue{
+		Type:   LLDPTLVSysCapabilities,
+		Length: uint16(sysCapabilitiesLen),
+		Value:  make([]byte, sysCapabilitiesLen),
+	}
+	binary.BigEndian.PutUint16(sysCapabilitiesVal.Value[0:], i.SysCapabilities.SystemCap.toUint16())
+	binary.BigEndian.PutUint16(sysCapabilitiesVal.Value[2:], i.SysCapabilities.EnabledCap.toUint16())
+	vals = append(vals, sysCapabilitiesVal)
+
+	// MgmtAddress
+	mgmtAddressLen := 8 + len(i.MgmtAddress.Address) + len(i.MgmtAddress.OID)
+	mgmtAddressVal := LinkLayerDiscoveryValue{
+		Type:   LLDPTLVMgmtAddress,
+		Length: uint16(mgmtAddressLen),
+		Value:  make([]byte, mgmtAddressLen),
+	}
+	mgmtAddressVal.Value[0] = uint8(len(i.MgmtAddress.Address) + 1)
+	mgmtAddressVal.Value[1] = byte(i.MgmtAddress.Subtype)
+	copy(mgmtAddressVal.Value[2:], i.MgmtAddress.Address[:])
+	mgmtAddressVal.Value[2+len(i.MgmtAddress.Address)] = byte(i.MgmtAddress.InterfaceSubtype)
+	binary.BigEndian.PutUint32(mgmtAddressVal.Value[3+len(i.MgmtAddress.Address):], i.MgmtAddress.InterfaceNumber)
+	mgmtAddressVal.Value[7+len(i.MgmtAddress.Address)] = uint8(len(i.MgmtAddress.OID))
+	copy(mgmtAddressVal.Value[8+len(i.MgmtAddress.Address):], []byte(i.MgmtAddress.OID[:]))
+	vals = append(vals, mgmtAddressVal)
+
+	// OrgTLVs
+	for _, tlv := range i.OrgTLVs {
+		val := LinkLayerDiscoveryValue{
+			Type:   LLDPTLVOrgSpecific,
+			Length: uint16(4 + len(tlv.Info)),
+			Value:  make([]byte, 4+len(tlv.Info)),
+		}
+		binary.BigEndian.PutUint32(val.Value[0:], (uint32(tlv.OUI)<<8)|uint32(tlv.SubType))
+		copy(val.Value[4:], tlv.Info[:])
+		vals = append(vals, val)
+	}
+
+	return vals
+}
+
 /// IEEE 802.1 TLV Subtypes
 const (
 	LLDP8021SubtypePortVLANID       uint8 = 1
@@ -472,6 +543,32 @@ type LLDPInfo8023 struct {
 	PowerViaMDI        LLDPPowerViaMDI8023
 	LinkAggregation    LLDPLinkAggregation
 	MTU                uint16
+}
+
+func (d *LLDPInfo8023) ToOrgSpecificTLVs() []LLDPOrgSpecificTLV {
+	// MACPHYConfigStatus
+	tlvMACPHYConfigStatus := LLDPOrgSpecificTLV{
+		OUI:     IEEEOUI8023,
+		SubType: uint8(LLDP8023SubtypeMACPHY),
+		Info:    make([]byte, 5),
+	}
+	tlvMACPHYConfigStatus.Info[0] = 0x00
+	binary.BigEndian.PutUint16(tlvMACPHYConfigStatus.Info[1:], d.MACPHYConfigStatus.AutoNegCapability)
+	binary.BigEndian.PutUint16(tlvMACPHYConfigStatus.Info[3:], d.MACPHYConfigStatus.MAUType)
+
+	// TODO PowerViaMDI
+
+	// TODO LinkAggregation
+
+	// MTU
+	tlvMTU := LLDPOrgSpecificTLV{
+		OUI:     IEEEOUI8023,
+		SubType: uint8(LLDP8023SubtypeMTU),
+		Info:    make([]byte, 2),
+	}
+	binary.BigEndian.PutUint16(tlvMTU.Info[0:], d.MTU)
+
+	return []LLDPOrgSpecificTLV{tlvMACPHYConfigStatus, tlvMTU}
 }
 
 // IEEE 802.1Qbg TLV Subtypes
@@ -760,6 +857,33 @@ type LLDPInfoProfinet struct {
 	PNIOPTCPStatus    LLDPPNIOPTCPStatus
 }
 
+func (d *LLDPInfoProfinet) ToOrgSpecificTLVs() []LLDPOrgSpecificTLV {
+	// TODO PNIODelay
+
+	// PNIOPortStatus
+	tlvPNIOPortStatus := LLDPOrgSpecificTLV{
+		OUI:     IEEEOUIProfinet,
+		SubType: uint8(LLDPProfinetPNIOPortStatus),
+		Info:    make([]byte, 4),
+	}
+	binary.BigEndian.PutUint16(tlvPNIOPortStatus.Info[0:], d.PNIOPortStatus.Class2)
+	binary.BigEndian.PutUint16(tlvPNIOPortStatus.Info[2:], d.PNIOPortStatus.Class3)
+
+	// TODO PNIOMRPPortStatus
+
+	// ChassisMAC
+	tlvChassisMAC := LLDPOrgSpecificTLV{
+		OUI:     IEEEOUIProfinet,
+		SubType: uint8(LLDPProfinetPNIOChassisMAC),
+		Info:    make([]byte, 6),
+	}
+	copy(tlvChassisMAC.Info[0:], d.ChassisMAC[0:])
+
+	// TODO PNIOPTCPStatus
+
+	return []LLDPOrgSpecificTLV{tlvPNIOPortStatus, tlvChassisMAC}
+}
+
 // LayerType returns gopacket.LayerTypeLinkLayerDiscovery.
 func (c *LinkLayerDiscovery) LayerType() gopacket.LayerType {
 	return LayerTypeLinkLayerDiscovery
@@ -779,11 +903,24 @@ func (c *LinkLayerDiscovery) SerializeTo(b gopacket.SerializeBuffer, opts gopack
 	binary.BigEndian.PutUint16(vb[chassIDLen+portIDLen:], ttlIDLen)
 	binary.BigEndian.PutUint16(vb[chassIDLen+portIDLen+2:], c.TTL)
 
+	// Serialize Values
+	for _, v := range c.Values {
+		vb, err = b.AppendBytes(2 + int(v.Length))
+		if err != nil {
+			return err
+		}
+		var tlvTypeLength uint16
+		tlvTypeLength = (uint16(v.Type) << 9) | uint16(v.Length)
+		binary.BigEndian.PutUint16(vb[len(vb)-2-int(v.Length):], tlvTypeLength)
+		copy(vb[len(vb)-int(v.Length):], v.Value)
+	}
+
 	vb, err = b.AppendBytes(2) // End Tlv, 2 bytes
 	if err != nil {
 		return err
 	}
 	binary.BigEndian.PutUint16(vb[len(vb)-2:], uint16(0)) //End tlv, 2 bytes, all zero
+
 	return nil
 
 }
@@ -1195,6 +1332,46 @@ func (l *LinkLayerDiscoveryInfo) DecodeProfinet() (info LLDPInfoProfinet, err er
 // LayerType returns gopacket.LayerTypeLinkLayerDiscoveryInfo.
 func (c *LinkLayerDiscoveryInfo) LayerType() gopacket.LayerType {
 	return LayerTypeLinkLayerDiscoveryInfo
+}
+
+func (c *LLDPCapabilities) toUint16() uint16 {
+	var caps uint16
+
+	if c.Other {
+		caps = caps + LLDPCapsOther
+	}
+	if c.Repeater {
+		caps = caps + LLDPCapsRepeater
+	}
+	if c.Bridge {
+		caps = caps + LLDPCapsBridge
+	}
+	if c.WLANAP {
+		caps = caps + LLDPCapsWLANAP
+	}
+	if c.Router {
+		caps = caps + LLDPCapsRouter
+	}
+	if c.Phone {
+		caps = caps + LLDPCapsPhone
+	}
+	if c.DocSis {
+		caps = caps + LLDPCapsDocSis
+	}
+	if c.StationOnly {
+		caps = caps + LLDPCapsStationOnly
+	}
+	if c.CVLAN {
+		caps = caps + LLDPCapsCVLAN
+	}
+	if c.SVLAN {
+		caps = caps + LLDPCapsSVLAN
+	}
+	if c.TMPR {
+		caps = caps + LLDPCapsTmpr
+	}
+
+	return caps
 }
 
 func getCapabilities(v uint16) (c LLDPCapabilities) {

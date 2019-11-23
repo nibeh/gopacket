@@ -139,11 +139,19 @@ func (p *Profinet) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) erro
 }
 
 func (p *Profinet) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
+
 	bytes, err := b.PrependBytes(2)
 	if err != nil {
 		return err
 	}
 	binary.BigEndian.PutUint16(bytes, uint16(p.FrameID))
+
+	// TODO added VLAN
+	bytes2, err := b.PrependBytes(4)
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint16(bytes2[2:4], uint16(EthernetTypeProfinet))
 
 	// log.Printf("% x\n", b.Bytes())
 	return nil
@@ -225,6 +233,9 @@ func (p *ProfinetDCP) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seri
 	}
 
 	// fmt.Println("final: ", blocksLen)
+
+	// TODO added VLAN to DCP
+	// bytes, err := b.PrependBytes(14 + blocksLen)
 
 	bytes, err := b.PrependBytes(10 + blocksLen)
 	if err != nil {
@@ -979,6 +990,16 @@ func (p *ProfinetIOAlarmCRBlockReq) DecodeFromBytes(data []byte, df gopacket.Dec
 	return nil
 }
 
+type ProfinetIOART struct {
+	ARUUID        []byte
+	InputFrameID  uint16
+	OutputFrameID uint16
+
+	MAC      []byte
+	AlarmRef uint16
+	ARType   uint16 // device only
+}
+
 type ProfinetIOARBlockRes struct {
 	BlockHeader          ProfinetIOBlockHeader
 	ARType               uint16
@@ -986,10 +1007,12 @@ type ProfinetIOARBlockRes struct {
 	SessionKey           uint16
 	CMResponderMacAdd    net.HardwareAddr // 6 byte
 	CMResponderUDPRTPort uint16
+	// Params               []ProfinetIOART
+	DataHack []byte
 }
 
 func (r *ProfinetIOARBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
-	lenPacket := 28
+	lenPacket := 28 + len(r.DataHack)
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
 		return lenPacket, err
@@ -999,6 +1022,7 @@ func (r *ProfinetIOARBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopa
 	binary.BigEndian.PutUint16(bytes[18:20], r.SessionKey)
 	copy(bytes[20:26], r.CMResponderMacAdd)
 	binary.BigEndian.PutUint16(bytes[26:28], r.CMResponderUDPRTPort)
+	copy(bytes[28:], r.DataHack)
 
 	if opts.FixLengths {
 		r.BlockHeader.Length = uint16(lenPacket)
