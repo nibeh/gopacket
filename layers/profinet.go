@@ -52,7 +52,7 @@ type PNDCPOption uint8
 const (
 	PNDCPOptionIP               PNDCPOption = 0x01
 	PNDCPOptionDevice           PNDCPOption = 0x02
-	PNDCPOptionDHPC             PNDCPOption = 0x03
+	PNDCPOptionDHCP             PNDCPOption = 0x03
 	PNDCPOptionReserved         PNDCPOption = 0x04
 	PNDCPOptionControl          PNDCPOption = 0x05
 	PNDCPOptionDeviceInitiative PNDCPOption = 0x06
@@ -79,6 +79,31 @@ const (
 	PNDCPSuboptionIPIP  PNDCPSuboptionIP = 0x02
 )
 
+type PNDCPSuboptionDHCP PNDCPSuboption
+
+const (
+	PNDCPSuboptionDHCPHostName             PNDCPSuboptionDHCP = 12
+	PNDCPSuboptionDHCPVendorSpecific       PNDCPSuboptionDHCP = 43
+	PNDCPSuboptionDHCPServerIdentifier     PNDCPSuboptionDHCP = 54
+	PNDCPSuboptionDHCPParameterRequestList PNDCPSuboptionDHCP = 55
+	PNDCPSuboptionDHCPClassIdentifier      PNDCPSuboptionDHCP = 60
+	PNDCPSuboptionDHCPClientIdentifier     PNDCPSuboptionDHCP = 61
+	PNDCPSuboptionDHCPFQDN                 PNDCPSuboptionDHCP = 81
+	PNDCPSuboptionDHCPUUIDGUIDClient       PNDCPSuboptionDHCP = 97
+	PNDCPSuboptionDHCPControlDHCP          PNDCPSuboptionDHCP = 255
+)
+
+type PNDCPSuboptionIPBlockInfo PNDCPSuboption
+
+const (
+	PNDCPSuboptionIPBlockInfoNotSet                  PNDCPSuboptionIPBlockInfo = 0x00
+	PNDCPSuboptionIPBlockInfoSet                     PNDCPSuboptionIPBlockInfo = 0x01
+	PNDCPSuboptionIPBlockInfoSetByDHCP               PNDCPSuboptionIPBlockInfo = 0x02
+	PNDCPSuboptionIPBlockInfoNotSetAddressConflict   PNDCPSuboptionIPBlockInfo = 0x80
+	PNDCPSuboptionIPBlockInfoSetAddressConflict      PNDCPSuboptionIPBlockInfo = 0x81
+	PNDCPSuboptionIPBlockInfotSetDHCPAddressConflict PNDCPSuboptionIPBlockInfo = 0x82
+)
+
 type PNDCPSuboptionDevice PNDCPSuboption
 
 const (
@@ -94,11 +119,12 @@ const (
 type PNDCPSuboptionControl PNDCPSuboption
 
 const (
-	PNDCPSuboptionControlStartTransaction PNDCPSuboptionControl = 0x01
-	PNDCPSuboptionControlEndTransaction   PNDCPSuboptionControl = 0x02
-	PNDCPSuboptionControlSignal           PNDCPSuboptionControl = 0x03
-	PNDCPSuboptionControlResponse         PNDCPSuboptionControl = 0x04
-	PNDCPSuboptionControlFactoryReset     PNDCPSuboptionControl = 0x05
+	PNDCPSuboptionControlStartTransaction PNDCPSuboptionControl = 1
+	PNDCPSuboptionControlEndTransaction   PNDCPSuboptionControl = 2
+	PNDCPSuboptionControlSignal           PNDCPSuboptionControl = 3
+	PNDCPSuboptionControlResponse         PNDCPSuboptionControl = 4
+	PNDCPSuboptionControlFactoryReset     PNDCPSuboptionControl = 5
+	PNDCPSuboptionControlResetToFactory   PNDCPSuboptionControl = 6
 )
 
 const (
@@ -139,19 +165,18 @@ func (p *Profinet) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) erro
 }
 
 func (p *Profinet) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
-
 	bytes, err := b.PrependBytes(2)
 	if err != nil {
 		return err
 	}
 	binary.BigEndian.PutUint16(bytes, uint16(p.FrameID))
 
-	// TODO added VLAN
-	bytes2, err := b.PrependBytes(4)
-	if err != nil {
-		return err
-	}
-	binary.BigEndian.PutUint16(bytes2[2:4], uint16(EthernetTypeProfinet))
+	// // TODO added VLAN
+	// bytes2, err := b.PrependBytes(4)
+	// if err != nil {
+	// 	return err
+	// }
+	// binary.BigEndian.PutUint16(bytes2[2:4], uint16(EthernetTypeProfinet))
 
 	// log.Printf("% x\n", b.Bytes())
 	return nil
@@ -209,6 +234,7 @@ type ProfinetDCPBlock struct {
 	Option    PNDCPOption
 	Suboption uint8
 	Length    uint16
+	BlockInfo uint16
 	Data      []byte
 }
 
@@ -218,24 +244,23 @@ func (p *ProfinetDCP) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seri
 
 	var blocksLen int
 	for _, block := range p.Blocks {
-		blockLen := len(block.Data)
-		blockLen = blockLen + blockLen%2 // static params + byte array length + padding
+		blockLen := 6 + len(block.Data)
+		blockLen = blockLen // static params + data length
 
 		if opts.FixLengths {
-			block.Length = uint16(blockLen)
+			block.Length = uint16(blockLen - 4)
 		}
 
-		blocksLen = blocksLen + 4 + blockLen
-		// fmt.Printf("%d\t%d\n", blockLen, blocksLen)
+		// padding
+		if blockLen%2 != 0 {
+			blockLen = blockLen + 1
+		}
+
+		blocksLen = blocksLen + blockLen
 	}
 	if opts.FixLengths {
 		p.BlockLength = uint16(blocksLen)
 	}
-
-	// fmt.Println("final: ", blocksLen)
-
-	// TODO added VLAN to DCP
-	// bytes, err := b.PrependBytes(14 + blocksLen)
 
 	bytes, err := b.PrependBytes(10 + blocksLen)
 	if err != nil {
@@ -249,15 +274,20 @@ func (p *ProfinetDCP) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seri
 
 	blocksLen = 10
 	for _, block := range p.Blocks {
-		blockLen := len(block.Data)
-		blockLen = blockLen + blockLen%2 // static params + byte array length + padding
+		blockLen := 6 + len(block.Data)
+		blockLen = blockLen // static params + byte array length + padding
 
 		bytes[blocksLen] = uint8(block.Option)
 		bytes[blocksLen+1] = block.Suboption
-		binary.BigEndian.PutUint16(bytes[blocksLen+2:], uint16(blockLen))
-		copy(bytes[blocksLen+4:], block.Data)
+		binary.BigEndian.PutUint16(bytes[blocksLen+2:], uint16(blockLen-4))
+		binary.BigEndian.PutUint16(bytes[blocksLen+4:], uint16(block.BlockInfo))
+		copy(bytes[blocksLen+6:], block.Data)
 
-		blocksLen = blocksLen + 4 + blockLen
+		if blockLen%2 != 0 {
+			blockLen = blockLen + 1
+		}
+
+		blocksLen = blocksLen + blockLen
 	}
 
 	return nil
@@ -271,40 +301,63 @@ func (d *ProfinetDCP) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) e
 	d.BlockLength = binary.BigEndian.Uint16(data[8:10])
 
 	len := int(d.BlockLength)
-	for len >= 4 {
-		dcpBlock := &ProfinetDCPBlock{}
-		decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], df)
-		if err != nil {
-			return err
-		}
+	if d.ServiceID == PNDCPServiceIDGet {
+		// log.Println("Profinet get request", len)
+		for len >= 2 {
+			dcpBlock := &ProfinetDCPBlock{}
+			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], false, true /*TODO*/, df)
+			if err != nil {
+				// log.Println("DCP Block DecodeFromBytes error:", err)
+				return err
+			}
 
-		d.Blocks = append(d.Blocks, *dcpBlock)
-		len = len - decodedLen
+			d.Blocks = append(d.Blocks, *dcpBlock)
+			len = len - decodedLen
+		}
+	} else {
+		for len >= 4 {
+			dcpBlock := &ProfinetDCPBlock{}
+			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], true, d.ServiceID != PNDCPServiceIDIdentify, df)
+			if err != nil {
+				return err
+			}
+
+			d.Blocks = append(d.Blocks, *dcpBlock)
+			len = len - decodedLen
+		}
 	}
 
 	return nil
 }
 
-func (b *ProfinetDCPBlock) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
-	if len(data) < 4 {
+func (b *ProfinetDCPBlock) DecodeFromBytes(data []byte, doDecodeData, doDecodeBlockInfo bool, df gopacket.DecodeFeedback) (int, error) {
+	if len(data) < 2 {
 		return 0, errors.New("Profinet DCP block too small")
 	}
 
 	b.Option = PNDCPOption(uint8(data[0]))
 	b.Suboption = uint8(data[1])
-	b.Length = binary.BigEndian.Uint16(data[2:4])
-	if b.Length > 0 {
-		if len(data[4:]) < int(b.Length) {
-			df.SetTruncated()
-			// TODO still return error here, even if packet is truncated?
-			return 4, errors.New("Profinet DCP block data too small")
+
+	lenDecoded := 2
+	if len(data) > 2 && doDecodeData {
+		b.Length = binary.BigEndian.Uint16(data[2:4])
+		if b.Length > 0 {
+			if len(data[4:]) < int(b.Length) {
+				df.SetTruncated()
+				// TODO still return error here, even if packet is truncated?
+				return 4, errors.New("Profinet DCP block data too small")
+			}
+
+			if doDecodeBlockInfo {
+				b.BlockInfo = binary.BigEndian.Uint16(data[4:])
+				b.Data = data[6 : b.Length+4]
+			} else {
+				b.Data = data[4 : b.Length+4]
+			}
 		}
-
-		b.Data = data[4 : b.Length+4]
+		// including padding here
+		lenDecoded = lenDecoded + 2 + int(b.Length) + int(b.Length)%2
 	}
-
-	// including padding here
-	lenDecoded := int(b.Length) + 4 + int(b.Length)%2
 
 	return lenDecoded, nil
 }
@@ -378,13 +431,148 @@ func decodeProfinetRT(data []byte, p gopacket.PacketBuilder) error {
 	return nil
 }
 
-type ProfinetDCERPC struct {
+type DCERPCPacketType byte
+
+const (
+	DCERPCPacketTypeRequest          DCERPCPacketType = 0
+	DCERPCPacketTypePing             DCERPCPacketType = 1
+	DCERPCPacketTypeResponse         DCERPCPacketType = 2
+	DCERPCPacketTypeFault            DCERPCPacketType = 3
+	DCERPCPacketTypeWorking          DCERPCPacketType = 4
+	DCERPCPacketTypeNoCall           DCERPCPacketType = 5
+	DCERPCPacketTypeReject           DCERPCPacketType = 6
+	DCERPCPacketTypeAck              DCERPCPacketType = 7
+	DCERPCPacketTypeClCancel         DCERPCPacketType = 8
+	DCERPCPacketTypeFack             DCERPCPacketType = 9
+	DCERPCPacketTypeCancelAck        DCERPCPacketType = 10
+	DCERPCPacketTypeBind             DCERPCPacketType = 11
+	DCERPCPacketTypeBindAck          DCERPCPacketType = 12
+	DCERPCPacketTypeBindNak          DCERPCPacketType = 13
+	DCERPCPacketTypeAlterContext     DCERPCPacketType = 14
+	DCERPCPacketTypeAlterContextResp DCERPCPacketType = 15
+	DCERPCPacketTypeShutdown         DCERPCPacketType = 17
+	DCERPCPacketTypeCoCancel         DCERPCPacketType = 18
+	DCERPCPacketTypeOrphaned         DCERPCPacketType = 19
+)
+
+type DCERPCOpNumType uint16
+
+const (
+	DCERPCOpNumConnect      DCERPCOpNumType = 0x0000
+	DCERPCOpNumRelease      DCERPCOpNumType = 0x0001
+	DCERPCOpNumRead         DCERPCOpNumType = 0x0002
+	DCERPCOpNumWrite        DCERPCOpNumType = 0x0003
+	DCERPCOpNumControl      DCERPCOpNumType = 0x0004
+	DCERPCOpNumReadImplicit DCERPCOpNumType = 0x0005
+)
+
+type IntegerRepresentationType uint8
+
+const (
+	IntegerRepresentationBigEndian    IntegerRepresentationType = 0
+	IntegerRepresentationLittleEndian IntegerRepresentationType = 1
+)
+
+type CharacterRepresentationType uint8
+
+const (
+	CharacterRepresentationASCII  CharacterRepresentationType = 0
+	CharacterRepresentationEBCDIC CharacterRepresentationType = 1
+)
+
+type FloatingPointRepresentationType uint8
+
+const (
+	FloatingPointRepresentationIEEE FloatingPointRepresentationType = 0
+	FloatingPointRepresentationVAX  FloatingPointRepresentationType = 1
+	FloatingPointRepresentationCRAY FloatingPointRepresentationType = 2
+	FloatingPointRepresentationIBM  FloatingPointRepresentationType = 3
+)
+
+type DCERPCFormats struct {
+	IntegerRepresentation       IntegerRepresentationType
+	CharacterRepresentation     CharacterRepresentationType
+	FloatingPointRepresentation FloatingPointRepresentationType
+}
+
+func getEncoding(data []byte) (DCERPCFormats, error) {
+	var format DCERPCFormats
+
+	if len(data) < 3 {
+		return format, errors.New("encodings data too short. Need 3 Bytes")
+	}
+
+	format.IntegerRepresentation = IntegerRepresentationType(data[0] >> 4)
+	format.CharacterRepresentation = CharacterRepresentationType(data[0] & 0x0f)
+	format.FloatingPointRepresentation = FloatingPointRepresentationType(data[1])
+
+	return format, nil
+}
+
+func (e DCERPCFormats) ToBytes(data []byte) {
+	data[0] = uint8(e.CharacterRepresentation) | (uint8(e.IntegerRepresentation) << 4)
+	data[1] = uint8(e.FloatingPointRepresentation)
+}
+
+// LLDPCapabilities Types
+const (
+	DCERPCFlags1LastFragment uint8 = 1 << 1
+	DCERPCFlags1Fragment     uint8 = 1 << 2
+	DCERPCFlags1NoFack       uint8 = 1 << 3
+	DCERPCFlags1Maybe        uint8 = 1 << 4
+	DCERPCFlags1Idempotent   uint8 = 1 << 5
+	DCERPCFlags1Broadcast    uint8 = 1 << 6
+)
+
+type DCERPCFlags1 struct {
+	LastFragment bool
+	Fragment     bool
+	NoFack       bool
+	Maybe        bool
+	Idempotent   bool
+	Broadcast    bool
+}
+
+func getFlags1(d uint8) (f DCERPCFlags1) {
+	f.LastFragment = (d&DCERPCFlags1LastFragment > 0)
+	f.Fragment = (d&DCERPCFlags1Fragment > 0)
+	f.NoFack = (d&DCERPCFlags1NoFack > 0)
+	f.Maybe = (d&DCERPCFlags1Maybe > 0)
+	f.Idempotent = (d&DCERPCFlags1Idempotent > 0)
+	f.Broadcast = (d&DCERPCFlags1Broadcast > 0)
+	return
+}
+
+func (f DCERPCFlags1) ToUint8() uint8 {
+	var r uint8
+	if f.LastFragment {
+		r = r | DCERPCFlags1LastFragment
+	}
+	if f.Fragment {
+		r = r | DCERPCFlags1Fragment
+	}
+	if f.NoFack {
+		r = r | DCERPCFlags1NoFack
+	}
+	if f.Maybe {
+		r = r | DCERPCFlags1Maybe
+	}
+	if f.Idempotent {
+		r = r | DCERPCFlags1Idempotent
+	}
+	if f.Broadcast {
+		r = r | DCERPCFlags1Broadcast
+	}
+	return r
+}
+
+type DCERPC struct {
 	BaseLayer
 	Version          uint8
-	PacketType       uint8
-	Flags1           uint8
+	PacketType       DCERPCPacketType
+	Flags1           DCERPCFlags1
 	Flags2           uint8
-	Encoding         uint16 // after one byte of pad
+	Encoding         DCERPCFormats
 	SerialHigh       uint8
 	ObjectID         []byte // 16 Byte
 	InterfaceID      []byte // 16 Byte
@@ -392,7 +580,7 @@ type ProfinetDCERPC struct {
 	ServerBootTime   uint32
 	InterfaceVersion uint32
 	SequenceNum      uint32
-	OpNum            uint16
+	OpNum            DCERPCOpNumType
 	InterfaceHint    uint16
 	ActivityHint     uint16
 	BodyLen          uint16
@@ -401,7 +589,7 @@ type ProfinetDCERPC struct {
 	SerialLow        uint8
 }
 
-func (r ProfinetDCERPC) LayerType() gopacket.LayerType { return LayerTypeProfinetDCERPC }
+func (r DCERPC) LayerType() gopacket.LayerType { return LayerTypeDCERPC }
 
 func fizzleUUID(uuidLE []byte) ([]byte, error) {
 	if len(uuidLE) != 16 {
@@ -425,32 +613,49 @@ func fizzleUUID(uuidLE []byte) ([]byte, error) {
 	return uuidBE, nil
 }
 
-func (r *ProfinetDCERPC) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (r *DCERPC) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	if len(data) < 80 {
 		return errors.New("Profinet DCE/RPC packet too small")
 	}
 
 	r.Version = uint8(data[0])
-	r.PacketType = uint8(data[1])
-	r.Flags1 = uint8(data[2])
+	r.PacketType = DCERPCPacketType(data[1])
+	r.Flags1 = getFlags1(data[2])
 	r.Flags2 = uint8(data[3])
-	r.Encoding = binary.BigEndian.Uint16(data[4:6]) // after one byte of pad
+	r.Encoding, _ = getEncoding(data[4:6]) // after one byte of pad
 	r.SerialHigh = uint8(data[7])
-	r.ObjectID, _ = fizzleUUID(data[8:24])
-	r.InterfaceID, _ = fizzleUUID(data[24:40])
-	r.ActivityID, _ = fizzleUUID(data[40:56])
-	r.ServerBootTime = binary.LittleEndian.Uint32(data[56:60])
-	r.InterfaceVersion = binary.LittleEndian.Uint32(data[60:64])
-	r.SequenceNum = binary.LittleEndian.Uint32(data[64:68])
-	r.OpNum = binary.LittleEndian.Uint16(data[68:70])
-	r.InterfaceHint = binary.LittleEndian.Uint16(data[70:72])
-	r.ActivityHint = binary.LittleEndian.Uint16(data[72:74])
-	r.BodyLen = binary.LittleEndian.Uint16(data[74:76])
-	r.FragmentNo = binary.LittleEndian.Uint16(data[76:78])
+	if r.Encoding.IntegerRepresentation == IntegerRepresentationLittleEndian {
+		// log.Println("\tLittle-Endian Encoding")
+		r.ObjectID, _ = fizzleUUID(data[8:24])
+		r.InterfaceID, _ = fizzleUUID(data[24:40])
+		r.ActivityID, _ = fizzleUUID(data[40:56])
+		r.ServerBootTime = binary.LittleEndian.Uint32(data[56:60])
+		r.InterfaceVersion = binary.LittleEndian.Uint32(data[60:64])
+		r.SequenceNum = binary.LittleEndian.Uint32(data[64:68])
+		r.OpNum = DCERPCOpNumType(binary.LittleEndian.Uint16(data[68:70]))
+		r.InterfaceHint = binary.LittleEndian.Uint16(data[70:72])
+		r.ActivityHint = binary.LittleEndian.Uint16(data[72:74])
+		r.BodyLen = binary.LittleEndian.Uint16(data[74:76])
+		r.FragmentNo = binary.LittleEndian.Uint16(data[76:78])
+	} else {
+		// log.Println("\tBig-Endian Encoding")
+		r.ObjectID = make([]byte, 16)
+		copy(r.ObjectID, data[8:])
+		r.InterfaceID = make([]byte, 16)
+		copy(r.InterfaceID, data[24:])
+		r.ActivityID = make([]byte, 16)
+		copy(r.ActivityID, data[40:])
+		r.ServerBootTime = binary.BigEndian.Uint32(data[56:60])
+		r.InterfaceVersion = binary.BigEndian.Uint32(data[60:64])
+		r.SequenceNum = binary.BigEndian.Uint32(data[64:68])
+		r.OpNum = DCERPCOpNumType(binary.BigEndian.Uint16(data[68:70]))
+		r.InterfaceHint = binary.BigEndian.Uint16(data[70:72])
+		r.ActivityHint = binary.BigEndian.Uint16(data[72:74])
+		r.BodyLen = binary.BigEndian.Uint16(data[74:76])
+		r.FragmentNo = binary.BigEndian.Uint16(data[76:78])
+	}
 	r.AuthProto = uint8(data[78])
 	r.SerialLow = uint8(data[79])
-
-	// log.Printf("OpNum: %x\n", r.OpNum)
 
 	r.Contents = data[:80]
 	r.Payload = data[80:]
@@ -458,7 +663,7 @@ func (r *ProfinetDCERPC) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback
 	return nil
 }
 
-func (r *ProfinetDCERPC) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
+func (r *DCERPC) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
 	if opts.FixLengths {
 		r.BodyLen = uint16(len(b.Bytes()))
 	}
@@ -469,10 +674,10 @@ func (r *ProfinetDCERPC) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.S
 	}
 
 	bytes[0] = r.Version
-	bytes[1] = r.PacketType
-	bytes[2] = r.Flags1
+	bytes[1] = byte(r.PacketType)
+	bytes[2] = r.Flags1.ToUint8()
 	bytes[3] = r.Flags2
-	binary.BigEndian.PutUint16(bytes[4:6], uint16(r.Encoding))
+	r.Encoding.ToBytes(bytes[4:])
 	bytes[6] = 0
 	bytes[7] = r.SerialHigh
 	copy(bytes[8:], r.ObjectID)
@@ -492,18 +697,23 @@ func (r *ProfinetDCERPC) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.S
 	return nil
 }
 
-func decodeProfinetDCERPC(data []byte, p gopacket.PacketBuilder) error {
+func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 	// assertion, if data is too small
 	if len(data) < 80 {
-		return errors.New("Malformed RPC Packet")
+		return errors.New("Malformed DCERPC Packet")
 	}
 
-	d := &ProfinetDCERPC{}
+	d := &DCERPC{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
 		return err
 	}
 	p.AddLayer(d)
+
+	if d.PacketType == DCERPCPacketTypePing {
+		// no more package data to come? - TODO
+		return nil
+	}
 
 	return p.NextDecoder(LayerTypeProfinetIO)
 }
@@ -1110,6 +1320,7 @@ func (r *ProfinetIOModuleDiffBlock) SerializeTo(b gopacket.SerializeBuffer, opts
 		lenPacket = lenPacket + lenBlock
 	}
 
+	lenPacket = lenPacket + 2
 	bytes, err := b.PrependBytes(2)
 	if err != nil {
 		return lenPacket, err
@@ -1121,7 +1332,7 @@ func (r *ProfinetIOModuleDiffBlock) SerializeTo(b gopacket.SerializeBuffer, opts
 
 	if opts.FixLengths {
 		// + 2 for NumberOfAPIs
-		r.BlockHeader.Length = uint16(lenPacket + 2)
+		r.BlockHeader.Length = uint16(lenPacket)
 	}
 	lenBlock, err := r.BlockHeader.SerializeTo(b, opts)
 	if err != nil {
@@ -1175,7 +1386,9 @@ func (r *ProfinetIO) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seria
 		lenPacket = lenPacket + lenBlock
 	}
 
-	for _, t := range r.IOCRBlockRess {
+	// for _, t := range r.IOCRBlockRess {
+	for i := len(r.IOCRBlockRess) - 1; i >= 0; i-- {
+		t := r.IOCRBlockRess[i]
 		lenBlock, err := t.SerializeTo(b, opts)
 		if err != nil {
 			return err
@@ -1233,14 +1446,23 @@ func (r *ProfinetIO) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seria
 func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// assertion, if data is too small
 	if len(data) < 20 {
-		return errors.New("Malformed Profinet IO Packet")
+		return errors.New("Malformed PN-IO Packet")
 	}
 
-	p.ArgsMaximum = binary.LittleEndian.Uint32(data[0:4])
-	p.ArgsLength = binary.LittleEndian.Uint32(data[4:8])
-	p.ArrayMaximumCount = binary.LittleEndian.Uint32(data[8:12])
-	p.ArrayOffset = binary.LittleEndian.Uint32(data[12:16])
-	p.ArrayActualCount = binary.LittleEndian.Uint32(data[16:20])
+	// check for little or big endian - TODO get this previous layer
+	if data[0] == 0 {
+		p.ArgsMaximum = binary.BigEndian.Uint32(data[0:4])
+		p.ArgsLength = binary.BigEndian.Uint32(data[4:8])
+		p.ArrayMaximumCount = binary.BigEndian.Uint32(data[8:12])
+		p.ArrayOffset = binary.BigEndian.Uint32(data[12:16])
+		p.ArrayActualCount = binary.BigEndian.Uint32(data[16:20])
+	} else {
+		p.ArgsMaximum = binary.LittleEndian.Uint32(data[0:4])
+		p.ArgsLength = binary.LittleEndian.Uint32(data[4:8])
+		p.ArrayMaximumCount = binary.LittleEndian.Uint32(data[8:12])
+		p.ArrayOffset = binary.LittleEndian.Uint32(data[12:16])
+		p.ArrayActualCount = binary.LittleEndian.Uint32(data[16:20])
+	}
 
 	// decode blocks
 	numBytes := int(p.ArrayActualCount)
@@ -1250,6 +1472,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 		blockHeader := &ProfinetIOBlockHeader{}
 		err := blockHeader.DecodeFromBytes(data[offset:], df)
 		if err != nil {
+			log.Println("PN-IO Block Header decode error:", err)
 			return err
 		}
 
@@ -1260,6 +1483,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOARBlockReq{}
 			err := b.DecodeFromBytes(data[offset+6:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1268,6 +1492,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOIOCRBlockReq{}
 			err := b.DecodeFromBytes(data[offset+6:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1276,6 +1501,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOAlarmCRBlockReq{}
 			err := b.DecodeFromBytes(data[offset+6:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1284,6 +1510,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOExpectedSubmoduleBlockReq{}
 			err := b.DecodeFromBytes(data[offset+6:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1292,6 +1519,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOIODControlReq{}
 			err := b.DecodeFromBytes(data[offset+6:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1300,6 +1528,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &ProfinetIOIODWriteReqHeader{}
 			err := b.DecodeFromBytes(data[offset:], df)
 			if err != nil {
+				log.Println("PN-IO Block Decode error:", err)
 				return err
 			}
 			b.BlockHeader = *blockHeader
@@ -1323,6 +1552,7 @@ func decodeProfinetIO(data []byte, p gopacket.PacketBuilder) error {
 	d := &ProfinetIO{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
+		log.Println("PN-IO decoding error:", err)
 		return err
 	}
 	p.AddLayer(d)
