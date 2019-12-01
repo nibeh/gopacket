@@ -1,6 +1,7 @@
 package layers
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"log"
@@ -9,427 +10,6 @@ import (
 
 	"github.com/google/gopacket"
 )
-
-type PNFrameID uint16
-
-const (
-	PNFrameIDTimeSynchronization PNFrameID = 0x0000
-	PNFrameIDRTClass3            PNFrameID = 0x0100
-	PNFrameIDRTClass2            PNFrameID = 0x8000
-	PNFrameIDRTClass1            PNFrameID = 0xc000
-	PNFrameIDAcyclicHigh         PNFrameID = 0xfc00
-	PNFrameIDReserved            PNFrameID = 0xfd00
-	PNFrameIDAcyclicLow          PNFrameID = 0xfe00
-	PNFrameIDHello               PNFrameID = 0xfefc
-	PNFrameIDDCPGetOrSet         PNFrameID = 0xfefd
-	PNFrameIDDCPIdentifyRequest  PNFrameID = 0xfefe
-	PNFrameIDDCPIdentifyResponse PNFrameID = 0xfeff
-)
-
-func PNDCPMulticastMAC() []byte {
-	return []byte{0x01, 0x0e, 0xcf, 0x00, 0x00, 0x00}
-}
-
-type PNDCPServiceID uint8
-
-const (
-	PNDCPServiceIDGet      PNDCPServiceID = 0x03
-	PNDCPServiceIDSet      PNDCPServiceID = 0x04
-	PNDCPServiceIDIdentify PNDCPServiceID = 0x05
-	PNDCPServiceIDHello    PNDCPServiceID = 0x06
-)
-
-type PNDCPServiceType uint8
-
-const (
-	PNDCPServiceTypeRequest     PNDCPServiceType = 0
-	PNDCPServiceTypeSuccess     PNDCPServiceType = 1
-	PNDCPServiceTypeUnsupported PNDCPServiceType = 5
-)
-
-type PNDCPOption uint8
-
-const (
-	PNDCPOptionIP               PNDCPOption = 0x01
-	PNDCPOptionDevice           PNDCPOption = 0x02
-	PNDCPOptionDHCP             PNDCPOption = 0x03
-	PNDCPOptionReserved         PNDCPOption = 0x04
-	PNDCPOptionControl          PNDCPOption = 0x05
-	PNDCPOptionDeviceInitiative PNDCPOption = 0x06
-	PNDCPOptionManufX80         PNDCPOption = 0x80
-	PNDCPOptionManufX81         PNDCPOption = 0x81
-	PNDCPOptionManufX82         PNDCPOption = 0x82
-	PNDCPOptionManufX83         PNDCPOption = 0x83
-	PNDCPOptionManufX84         PNDCPOption = 0x84
-	PNDCPOptionManufX85         PNDCPOption = 0x85
-	PNDCPOptionManufX86         PNDCPOption = 0x86
-	PNDCPOptionAllselector      PNDCPOption = 0xff
-)
-
-type PNDCPSuboption uint8
-
-const (
-	PNDCPSuboptionAllselector PNDCPSuboption = 0xff
-)
-
-type PNDCPSuboptionIP PNDCPSuboption
-
-const (
-	PNDCPSuboptionIPMAC PNDCPSuboptionIP = 0x01
-	PNDCPSuboptionIPIP  PNDCPSuboptionIP = 0x02
-)
-
-type PNDCPSuboptionDHCP PNDCPSuboption
-
-const (
-	PNDCPSuboptionDHCPHostName             PNDCPSuboptionDHCP = 12
-	PNDCPSuboptionDHCPVendorSpecific       PNDCPSuboptionDHCP = 43
-	PNDCPSuboptionDHCPServerIdentifier     PNDCPSuboptionDHCP = 54
-	PNDCPSuboptionDHCPParameterRequestList PNDCPSuboptionDHCP = 55
-	PNDCPSuboptionDHCPClassIdentifier      PNDCPSuboptionDHCP = 60
-	PNDCPSuboptionDHCPClientIdentifier     PNDCPSuboptionDHCP = 61
-	PNDCPSuboptionDHCPFQDN                 PNDCPSuboptionDHCP = 81
-	PNDCPSuboptionDHCPUUIDGUIDClient       PNDCPSuboptionDHCP = 97
-	PNDCPSuboptionDHCPControlDHCP          PNDCPSuboptionDHCP = 255
-)
-
-type PNDCPSuboptionIPBlockInfo PNDCPSuboption
-
-const (
-	PNDCPSuboptionIPBlockInfoNotSet                  PNDCPSuboptionIPBlockInfo = 0x00
-	PNDCPSuboptionIPBlockInfoSet                     PNDCPSuboptionIPBlockInfo = 0x01
-	PNDCPSuboptionIPBlockInfoSetByDHCP               PNDCPSuboptionIPBlockInfo = 0x02
-	PNDCPSuboptionIPBlockInfoNotSetAddressConflict   PNDCPSuboptionIPBlockInfo = 0x80
-	PNDCPSuboptionIPBlockInfoSetAddressConflict      PNDCPSuboptionIPBlockInfo = 0x81
-	PNDCPSuboptionIPBlockInfotSetDHCPAddressConflict PNDCPSuboptionIPBlockInfo = 0x82
-)
-
-type PNDCPSuboptionDevice PNDCPSuboption
-
-const (
-	PNDCPSuboptionDeviceManufacturer  PNDCPSuboptionDevice = 0x01
-	PNDCPSuboptionDeviceNameOfStation PNDCPSuboptionDevice = 0x02
-	PNDCPSuboptionDeviceID            PNDCPSuboptionDevice = 0x03
-	PNDCPSuboptionDeviceRole          PNDCPSuboptionDevice = 0x04
-	PNDCPSuboptionDeviceOptions       PNDCPSuboptionDevice = 0x05
-	PNDCPSuboptionDeviceAliasName     PNDCPSuboptionDevice = 0x06
-	PNDCPSuboptionDeviceInstance      PNDCPSuboptionDevice = 0x07
-)
-
-type PNDCPSuboptionControl PNDCPSuboption
-
-const (
-	PNDCPSuboptionControlStartTransaction PNDCPSuboptionControl = 1
-	PNDCPSuboptionControlEndTransaction   PNDCPSuboptionControl = 2
-	PNDCPSuboptionControlSignal           PNDCPSuboptionControl = 3
-	PNDCPSuboptionControlResponse         PNDCPSuboptionControl = 4
-	PNDCPSuboptionControlFactoryReset     PNDCPSuboptionControl = 5
-	PNDCPSuboptionControlResetToFactory   PNDCPSuboptionControl = 6
-)
-
-const (
-	PNDCPOptionDeviceRoleIODevice      uint8 = 0x01
-	PNDCPOptionDeviceRoleIOController  uint8 = 0x02
-	PNDCPOptionDeviceRoleIOMultidevice uint8 = 0x04
-	PNDCPOptionDeviceRoleIOSupervisor  uint8 = 0x08
-)
-
-type PNDCPBlockError uint8
-
-const (
-	PNDCPBlockErrorOK                   PNDCPBlockError = 0x00
-	PNDCPBlockErrorOptionUnsupported    PNDCPBlockError = 0x01
-	PNDCPBlockErrorSuboptionUnsupported PNDCPBlockError = 0x02
-	PNDCPBlockErrorSuboptionNotSet      PNDCPBlockError = 0x03
-	PNDCPBlockErrorResourceError        PNDCPBlockError = 0x04
-	PNDCPBlockErrorSetImpossible        PNDCPBlockError = 0x05
-	PNDCPBlockErrorInOperation          PNDCPBlockError = 0x06
-)
-
-type Profinet struct {
-	BaseLayer
-	FrameID PNFrameID
-}
-
-func (p Profinet) LayerType() gopacket.LayerType { return LayerTypeProfinet }
-
-func (p *Profinet) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	if len(data) < 2 {
-		return errors.New("Profinet packet too small")
-	}
-
-	p.FrameID = PNFrameID(binary.BigEndian.Uint16(data[0:2]))
-	p.Payload = data[2:]
-
-	return nil
-}
-
-func (p *Profinet) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
-	bytes, err := b.PrependBytes(2)
-	if err != nil {
-		return err
-	}
-	binary.BigEndian.PutUint16(bytes, uint16(p.FrameID))
-
-	// // TODO added VLAN
-	// bytes2, err := b.PrependBytes(4)
-	// if err != nil {
-	// 	return err
-	// }
-	// binary.BigEndian.PutUint16(bytes2[2:4], uint16(EthernetTypeProfinet))
-
-	// log.Printf("% x\n", b.Bytes())
-	return nil
-}
-
-func decodeProfinet(data []byte, p gopacket.PacketBuilder) error {
-	// assertion, if data is too small
-	if len(data) < 2 {
-		return errors.New("Malformed Profinet Packet")
-	}
-
-	d := &Profinet{}
-	err := d.DecodeFromBytes(data, p)
-	if err != nil {
-		return err
-	}
-	p.AddLayer(d)
-
-	if d.FrameID >= PNFrameIDTimeSynchronization && d.FrameID < PNFrameIDRTClass3 {
-		// fmt.Println("This is a Profinet Time Synchronization packet")
-	} else if d.FrameID >= PNFrameIDRTClass3 && d.FrameID < PNFrameIDRTClass2 {
-		// fmt.Println("This is a Profinet RT Class 3 packet")
-		return p.NextDecoder(LayerTypeProfinetRT)
-	} else if d.FrameID >= PNFrameIDRTClass2 && d.FrameID < PNFrameIDRTClass1 {
-		// fmt.Println("This is a Profinet RT Class 2 packet")
-		return p.NextDecoder(LayerTypeProfinetRT)
-	} else if d.FrameID >= PNFrameIDRTClass1 && d.FrameID < PNFrameIDAcyclicHigh {
-		// fmt.Println("This is a Profinet RT Class 1 packet")
-		return p.NextDecoder(LayerTypeProfinetRT)
-	} else if d.FrameID >= PNFrameIDAcyclicHigh && d.FrameID < PNFrameIDReserved {
-		// fmt.Println("This is a Profinet Acyclic High packet")
-	} else if d.FrameID >= PNFrameIDReserved && d.FrameID < PNFrameIDAcyclicLow {
-		// fmt.Println("This is a Profinet Reserved packet")
-	} else if d.FrameID >= PNFrameIDAcyclicLow && d.FrameID < PNFrameIDDCPGetOrSet {
-		// fmt.Println("This is a Profinet Acyclic Low packet")
-	} else if d.FrameID >= PNFrameIDDCPGetOrSet && d.FrameID <= PNFrameIDDCPIdentifyResponse {
-		// fmt.Println("This is a Profinet DCP packet")
-		return p.NextDecoder(LayerTypeProfinetDCP)
-	}
-
-	return nil
-}
-
-type ProfinetDCP struct {
-	BaseLayer
-	ServiceID     PNDCPServiceID
-	ServiceType   PNDCPServiceType
-	Xid           uint32
-	ResponseDelay uint16
-	BlockLength   uint16
-	Blocks        []ProfinetDCPBlock
-}
-
-type ProfinetDCPBlock struct {
-	Option    PNDCPOption
-	Suboption uint8
-	Length    uint16
-	BlockInfo uint16
-	Data      []byte
-}
-
-func (p ProfinetDCP) LayerType() gopacket.LayerType { return LayerTypeProfinetDCP }
-
-func (p *ProfinetDCP) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
-
-	var blocksLen int
-	for _, block := range p.Blocks {
-		blockLen := 6 + len(block.Data)
-		blockLen = blockLen // static params + data length
-
-		if opts.FixLengths {
-			block.Length = uint16(blockLen - 4)
-		}
-
-		// padding
-		if blockLen%2 != 0 {
-			blockLen = blockLen + 1
-		}
-
-		blocksLen = blocksLen + blockLen
-	}
-	if opts.FixLengths {
-		p.BlockLength = uint16(blocksLen)
-	}
-
-	bytes, err := b.PrependBytes(10 + blocksLen)
-	if err != nil {
-		return err
-	}
-	bytes[0] = uint8(p.ServiceID)
-	bytes[1] = uint8(p.ServiceType)
-	binary.BigEndian.PutUint32(bytes[2:], p.Xid)
-	binary.BigEndian.PutUint16(bytes[6:], p.ResponseDelay)
-	binary.BigEndian.PutUint16(bytes[8:], p.BlockLength)
-
-	blocksLen = 10
-	for _, block := range p.Blocks {
-		blockLen := 6 + len(block.Data)
-		blockLen = blockLen // static params + byte array length + padding
-
-		bytes[blocksLen] = uint8(block.Option)
-		bytes[blocksLen+1] = block.Suboption
-		binary.BigEndian.PutUint16(bytes[blocksLen+2:], uint16(blockLen-4))
-		binary.BigEndian.PutUint16(bytes[blocksLen+4:], uint16(block.BlockInfo))
-		copy(bytes[blocksLen+6:], block.Data)
-
-		if blockLen%2 != 0 {
-			blockLen = blockLen + 1
-		}
-
-		blocksLen = blocksLen + blockLen
-	}
-
-	return nil
-}
-
-func (d *ProfinetDCP) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	d.ServiceID = PNDCPServiceID(data[0])
-	d.ServiceType = PNDCPServiceType(data[1])
-	d.Xid = binary.BigEndian.Uint32(data[2:6])
-	d.ResponseDelay = binary.BigEndian.Uint16(data[6:8])
-	d.BlockLength = binary.BigEndian.Uint16(data[8:10])
-
-	len := int(d.BlockLength)
-	if d.ServiceID == PNDCPServiceIDGet {
-		// log.Println("Profinet get request", len)
-		for len >= 2 {
-			dcpBlock := &ProfinetDCPBlock{}
-			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], false, true /*TODO*/, df)
-			if err != nil {
-				// log.Println("DCP Block DecodeFromBytes error:", err)
-				return err
-			}
-
-			d.Blocks = append(d.Blocks, *dcpBlock)
-			len = len - decodedLen
-		}
-	} else {
-		for len >= 4 {
-			dcpBlock := &ProfinetDCPBlock{}
-			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], true, d.ServiceID != PNDCPServiceIDIdentify, df)
-			if err != nil {
-				return err
-			}
-
-			d.Blocks = append(d.Blocks, *dcpBlock)
-			len = len - decodedLen
-		}
-	}
-
-	return nil
-}
-
-func (b *ProfinetDCPBlock) DecodeFromBytes(data []byte, doDecodeData, doDecodeBlockInfo bool, df gopacket.DecodeFeedback) (int, error) {
-	if len(data) < 2 {
-		return 0, errors.New("Profinet DCP block too small")
-	}
-
-	b.Option = PNDCPOption(uint8(data[0]))
-	b.Suboption = uint8(data[1])
-
-	lenDecoded := 2
-	if len(data) > 2 && doDecodeData {
-		b.Length = binary.BigEndian.Uint16(data[2:4])
-		if b.Length > 0 {
-			if len(data[4:]) < int(b.Length) {
-				df.SetTruncated()
-				// TODO still return error here, even if packet is truncated?
-				return 4, errors.New("Profinet DCP block data too small")
-			}
-
-			if doDecodeBlockInfo {
-				b.BlockInfo = binary.BigEndian.Uint16(data[4:])
-				b.Data = data[6 : b.Length+4]
-			} else {
-				b.Data = data[4 : b.Length+4]
-			}
-		}
-		// including padding here
-		lenDecoded = lenDecoded + 2 + int(b.Length) + int(b.Length)%2
-	}
-
-	return lenDecoded, nil
-}
-
-func decodeProfinetDCP(data []byte, p gopacket.PacketBuilder) error {
-	// assertion, if data is too small
-	if len(data) < 10 {
-		return errors.New("Malformed Profinet DCP Packet")
-	}
-
-	d := &ProfinetDCP{}
-	err := d.DecodeFromBytes(data, p)
-	if err != nil {
-		return err
-	}
-	p.AddLayer(d)
-
-	return nil
-}
-
-type ProfinetRT struct {
-	BaseLayer
-	Data           []byte // 40 - 1500 Byte
-	CycleCounter   uint16
-	DataStatus     uint8
-	TransferStatus uint8
-}
-
-func (p ProfinetRT) LayerType() gopacket.LayerType { return LayerTypeProfinetRT }
-
-func (d *ProfinetRT) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
-	numBytes := int(Max(int64(40), int64(len(d.Data)))) + 4
-	bytes, err := b.PrependBytes(numBytes)
-	if err != nil {
-		log.Println("cannot Prepend numBytes:", numBytes)
-		return err
-	}
-
-	copy(bytes[0:numBytes-4], d.Data)
-	binary.BigEndian.PutUint16(bytes[numBytes-4:numBytes-2], uint16(d.CycleCounter))
-	bytes[numBytes-2] = d.DataStatus
-	bytes[numBytes-1] = d.TransferStatus
-
-	return nil
-}
-
-func (d *ProfinetRT) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	offset := len(data) - 4
-	d.Data = make([]byte, offset)
-	copy(d.Data, data[0:offset])
-	d.CycleCounter = binary.BigEndian.Uint16(data[offset : offset+2])
-	d.DataStatus = data[offset+2]
-	d.TransferStatus = data[offset+3]
-
-	return nil
-}
-
-func decodeProfinetRT(data []byte, p gopacket.PacketBuilder) error {
-	// assertion, if data is too small
-	if len(data) < 44 {
-		return errors.New("Malformed Profinet DCP Packet")
-	}
-
-	d := &ProfinetRT{}
-	err := d.DecodeFromBytes(data, p)
-	if err != nil {
-		return err
-	}
-	p.AddLayer(d)
-
-	return nil
-}
 
 type DCERPCPacketType byte
 
@@ -564,6 +144,33 @@ func (f DCERPCFlags1) ToUint8() uint8 {
 		r = r | DCERPCFlags1Broadcast
 	}
 	return r
+}
+
+func PNDCERPCDeviceInterfaceID() []byte {
+	// TODO big or little endian
+	return []byte{0xde, 0xa0, 0x00, 0x01, 0x6c, 0x97, 0x11, 0xd1, 0x82, 0x71, 0x00, 0xa0, 0x24, 0x42, 0xdf, 0x7d}
+}
+
+func PNDCERPCControllerInterfaceID() []byte {
+	// TODO big or little endian
+	return []byte{0xde, 0xa0, 0x00, 0x02, 0x6c, 0x97, 0x11, 0xd1, 0x82, 0x71, 0x00, 0xa0, 0x24, 0x42, 0xdf, 0x7d}
+}
+
+func PNDCERPCObjectID(nodeNumber, deviceID, vendorID uint16) []byte {
+	// TODO big or little endian
+	// DEA00000-6C97-11D1-8271-XXXXYYYYZZZZ (X: Node Number, Y: DeviceID, Z: VendorID)
+	objectID := []byte{0xde, 0xa0, 0x00, 0x00, 0x6c, 0x97, 0x11, 0xd1, 0x82, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	binary.BigEndian.PutUint16(objectID[10:], nodeNumber)
+	binary.BigEndian.PutUint16(objectID[12:], deviceID)
+	binary.BigEndian.PutUint16(objectID[14:], vendorID)
+
+	return objectID
+}
+
+func RandomUUID() []byte {
+	res := make([]byte, 16)
+	rand.Read(res)
+	return res
 }
 
 type DCERPC struct {
@@ -711,6 +318,7 @@ func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 	p.AddLayer(d)
 
 	if d.PacketType == DCERPCPacketTypePing {
+		log.Println("PING!")
 		// no more package data to come? - TODO
 		return nil
 	}
@@ -720,54 +328,141 @@ func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 
 type ProfinetIO struct {
 	BaseLayer
-	ArgsMaximum                uint32 // or status
-	ArgsLength                 uint32
-	ArrayMaximumCount          uint32
-	ArrayOffset                uint32
-	ArrayActualCount           uint32
-	ARBlockReqs                []ProfinetIOARBlockReq
-	IOCRBlockReqs              []ProfinetIOIOCRBlockReq
-	ExpectedSubmoduleBlockReqs []ProfinetIOExpectedSubmoduleBlockReq
-	AlarmCRBlockReqs           []ProfinetIOAlarmCRBlockReq
-	IODWriteReqHeader          *ProfinetIOIODWriteReqHeader
-	ARBlockRess                []ProfinetIOARBlockRes
-	IOCRBlockRess              []ProfinetIOIOCRBlockRes
-	AlarmCRBlockRess           []ProfinetIOAlarmCRBlockRes
-	ModuleDiffBlock            *ProfinetIOModuleDiffBlock
-	IODWriteResHeader          *ProfinetIOIODWriteResHeader
-	IODControlReq              *ProfinetIOIODControlReq // used for both req and res
+	ArgsMaximum       uint32 // or status
+	ArgsLength        uint32
+	ArrayMaximumCount uint32
+	ArrayOffset       uint32
+	ArrayActualCount  uint32
+
+	// requests - TODO missing: PrmServerBlock, MCRBlockReq, ARRPCBlockReq (+ others)
+	ARBlockReq                 *PNIOARBlockReq
+	IOCRBlockReqs              []PNIOIOCRBlockReq
+	ExpectedSubmoduleBlockReqs []PNIOExpectedSubmoduleBlockReq
+	AlarmCRBlockReqs           []PNIOAlarmCRBlockReq
+	IODWriteReqs               []PNIOIODWriteReq
+	IODReadReq                 *PNIOIODReadReq
+	IODControlReq              *PNIOIODControlReq
+	// IOXBlockReq                *PNIOIOXBlockReq
+
+	// responses
+	ARBlockRes       *PNIOARBlockRes
+	IOCRBlockRess    []PNIOIOCRBlockRes
+	ModuleDiffBlock  *PNIOModuleDiffBlock
+	AlarmCRBlockRess []PNIOAlarmCRBlockRes
+	ARServerRes      *PNIOARRPCServerBlockRes
+	IODWriteRess     []PNIOIODWriteResHeader
+	// IODControlRes
 }
 
 func (p ProfinetIO) LayerType() gopacket.LayerType { return LayerTypeProfinetIO }
 
-type ProfinetIOBlockHeaderType uint16
+type PNIOBlockHeaderType uint16
 
 const (
-	ProfinetIOBlockHeaderTypeIODWriteReqHeader         ProfinetIOBlockHeaderType = 0x0008
-	ProfinetIOBlockHeaderTypeARBlockReq                ProfinetIOBlockHeaderType = 0x0101
-	ProfinetIOBlockHeaderTypeIOCRBlockReq              ProfinetIOBlockHeaderType = 0x0102
-	ProfinetIOBlockHeaderTypeAlarmCRBlockReq           ProfinetIOBlockHeaderType = 0x0103
-	ProfinetIOBlockHeaderTypeExpectedSubmoduleBlockReq ProfinetIOBlockHeaderType = 0x0104
-	ProfinetIOBlockHeaderTypeIODControlReq             ProfinetIOBlockHeaderType = 0x0110
-	ProfinetIOBlockHeaderTypeReleaseReq                ProfinetIOBlockHeaderType = 0x0114
-	ProfinetIOBlockHeaderTypeIODWriteResHeader         ProfinetIOBlockHeaderType = 0x8008
-	ProfinetIOBlockHeaderTypeARBlockRes                ProfinetIOBlockHeaderType = 0x8101
-	ProfinetIOBlockHeaderTypeIOCRBlockRes              ProfinetIOBlockHeaderType = 0x8102
-	ProfinetIOBlockHeaderTypeAlarmCRBlockRes           ProfinetIOBlockHeaderType = 0x8103
-	ProfinetIOBlockHeaderTypeModuleDiffBlock           ProfinetIOBlockHeaderType = 0x8104
+	PNIOBlockHeaderAlarmNotificationHigh PNIOBlockHeaderType = 0x0001
+	PNIOBlockHeaderAlarmNotificationLow  PNIOBlockHeaderType = 0x0002
+
+	PNIOBlockHeaderIODWriteReqHeader PNIOBlockHeaderType = 0x0008
+	PNIOBlockHeaderIODReadReqHeader  PNIOBlockHeaderType = 0x0009
+
+	PNIOBlockHeaderDiagnosisData PNIOBlockHeaderType = 0x0010
+
+	PNIOBlockHeaderExpectedIdentificationData PNIOBlockHeaderType = 0x0012
+	PNIOBlockHeaderRealIdentificationData     PNIOBlockHeaderType = 0x0013
+	PNIOBlockHeaderSubstituteValue            PNIOBlockHeaderType = 0x0014
+	PNIOBlockHeaderRecordInputDataObject      PNIOBlockHeaderType = 0x0015
+	PNIOBlockHeaderRecordOutputDataObject     PNIOBlockHeaderType = 0x0016
+
+	PNIOBlockHeaderARData      PNIOBlockHeaderType = 0x0018
+	PNIOBlockHeaderLogBookData PNIOBlockHeaderType = 0x0019
+	PNIOBlockHeaderAPIData     PNIOBlockHeaderType = 0x001A
+	PNIOBlockHeaderSRLData     PNIOBlockHeaderType = 0x001B
+
+	PNIOBlockHeaderIM0  PNIOBlockHeaderType = 0x0020
+	PNIOBlockHeaderIM1  PNIOBlockHeaderType = 0x0021
+	PNIOBlockHeaderIM2  PNIOBlockHeaderType = 0x0022
+	PNIOBlockHeaderIM3  PNIOBlockHeaderType = 0x0023
+	PNIOBlockHeaderIM4  PNIOBlockHeaderType = 0x0024
+	PNIOBlockHeaderIM5  PNIOBlockHeaderType = 0x0025
+	PNIOBlockHeaderIM6  PNIOBlockHeaderType = 0x0026
+	PNIOBlockHeaderIM7  PNIOBlockHeaderType = 0x0027
+	PNIOBlockHeaderIM8  PNIOBlockHeaderType = 0x0028
+	PNIOBlockHeaderIM9  PNIOBlockHeaderType = 0x0029
+	PNIOBlockHeaderIM10 PNIOBlockHeaderType = 0x002a
+	PNIOBlockHeaderIM11 PNIOBlockHeaderType = 0x002b
+	PNIOBlockHeaderIM12 PNIOBlockHeaderType = 0x002c
+	PNIOBlockHeaderIM13 PNIOBlockHeaderType = 0x002d
+	PNIOBlockHeaderIM14 PNIOBlockHeaderType = 0x002e
+	PNIOBlockHeaderIM15 PNIOBlockHeaderType = 0x002f
+
+	PNIOBlockHeaderIM0FilterDataSubmodule PNIOBlockHeaderType = 0x0030
+	PNIOBlockHeaderIM0FilterDataModule    PNIOBlockHeaderType = 0x0031
+	PNIOBlockHeaderIM0FilterDataDevice    PNIOBlockHeaderType = 0x0032
+
+	PNIOBlockHeaderARBlockReq             PNIOBlockHeaderType = 0x0101
+	PNIOBlockHeaderIOCRBlockReq           PNIOBlockHeaderType = 0x0102
+	PNIOBlockHeaderAlarmCRBlockReq        PNIOBlockHeaderType = 0x0103
+	PNIOBlockHeaderExpectedSubmoduleBlock PNIOBlockHeaderType = 0x0104
+	PNIOBlockHeaderPRMServerReq           PNIOBlockHeaderType = 0x0105
+	PNIOBlockHeaderMCRReq                 PNIOBlockHeaderType = 0x0106
+	PNIOBlockHeaderRPCServerReq           PNIOBlockHeaderType = 0x0107
+	PNIOBlockHeaderARVendorBlockReq       PNIOBlockHeaderType = 0x0108
+	PNIOBlockHeaderIRInfoBlockReq         PNIOBlockHeaderType = 0x0109
+	PNIOBlockHeaderSRInfoBlockReq         PNIOBlockHeaderType = 0x010A
+	PNIOBlockHeaderARFSUBlockReq          PNIOBlockHeaderType = 0x010B
+	PNIOBlockHeaderRSInfoBlockReq         PNIOBlockHeaderType = 0x010C
+
+	PNIOBlockHeaderPRMEndReq            PNIOBlockHeaderType = 0x0110 // IODControl
+	PNIOBlockHeaderPRMPlugAlarmReq      PNIOBlockHeaderType = 0x0111
+	PNIOBlockHeaderAppRdyReq            PNIOBlockHeaderType = 0x0112
+	PNIOBlockHeaderAppRdyPlugAlarmReq   PNIOBlockHeaderType = 0x0113
+	PNIOBlockHeaderReleaseBlockReq      PNIOBlockHeaderType = 0x0114
+	PNIOBlockHeaderXControlRdyCompReq   PNIOBlockHeaderType = 0x0116
+	PNIOBlockHeaderXControlRdyRTC3Req   PNIOBlockHeaderType = 0x0117
+	PNIOBlockHeaderPRMBeginReq          PNIOBlockHeaderType = 0x0118
+	PNIOBlockHeaderSubmodulePRMBeginReq PNIOBlockHeaderType = 0x0119
+
+	PNIOBlockHeaderPDInterfaceAdjust PNIOBlockHeaderType = 0x0250
+
+	PNIOBlockHeaderAlarmAckHigh PNIOBlockHeaderType = 0x8001
+	PNIOBlockHeaderAlarmAckLow  PNIOBlockHeaderType = 0x8002
+
+	PNIOBlockHeaderIODWriteRes PNIOBlockHeaderType = 0x8008
+	PNIOBlockHeaderIODReadRes  PNIOBlockHeaderType = 0x8009
+
+	PNIOBlockHeaderARBlockRes        PNIOBlockHeaderType = 0x8101
+	PNIOBlockHeaderIOCRBlockRes      PNIOBlockHeaderType = 0x8102
+	PNIOBlockHeaderAlarmCRBlockRes   PNIOBlockHeaderType = 0x8103
+	PNIOBlockHeaderModuleDiffBlock   PNIOBlockHeaderType = 0x8104
+	PNIOBlockHeaderPRMServerBlockRes PNIOBlockHeaderType = 0x8105
+	PNIOBlockHeaderARServerBlock     PNIOBlockHeaderType = 0x8106
+	PNIOBlockHeaderARRPCBlockRes     PNIOBlockHeaderType = 0x8107
+	PNIOBlockHeaderARVendorBlockRes  PNIOBlockHeaderType = 0x8108
+
+	PNIOBlockHeaderPRMEndRes           PNIOBlockHeaderType = 0x8110
+	PNIOBlockHeaderPRMEndPlugAlarmRes  PNIOBlockHeaderType = 0x8110
+	PNIOBlockHeaderAppRdyRes           PNIOBlockHeaderType = 0x8110
+	PNIOBlockHeaderAppRedyPlugAlarmRes PNIOBlockHeaderType = 0x8110
+	PNIOBlockHeaderReleaseBlockRes     PNIOBlockHeaderType = 0x8110
 )
 
-type ProfinetIOBlockHeader struct {
-	Type        ProfinetIOBlockHeaderType
+type PNIOBlockHeader struct {
+	Type        PNIOBlockHeaderType
 	Length      uint16
 	VersionHigh uint8
 	VersionLow  uint8
 }
 
-func (h *ProfinetIOBlockHeader) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
-	// TODO check length
+func NewPNIOBlockHeader(t PNIOBlockHeaderType) PNIOBlockHeader {
+	return PNIOBlockHeader{Type: t, VersionHigh: 0x01, VersionLow: 0x00}
+}
 
-	h.Type = ProfinetIOBlockHeaderType(binary.BigEndian.Uint16(data[0:2]))
+func (h *PNIOBlockHeader) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+	if len(data) < 6 {
+		return errors.New("PNIOBlockHeader too small")
+	}
+
+	h.Type = PNIOBlockHeaderType(binary.BigEndian.Uint16(data[0:2]))
 	h.Length = binary.BigEndian.Uint16(data[2:4])
 	h.VersionHigh = uint8(data[4])
 	h.VersionLow = uint8(data[5])
@@ -775,7 +470,7 @@ func (h *ProfinetIOBlockHeader) DecodeFromBytes(data []byte, df gopacket.DecodeF
 	return nil
 }
 
-func (h *ProfinetIOBlockHeader) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (h *PNIOBlockHeader) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	bytes, err := b.PrependBytes(6)
 	if err != nil {
 		return 6, err
@@ -795,24 +490,24 @@ func (h *ProfinetIOBlockHeader) SerializeTo(b gopacket.SerializeBuffer, opts gop
 	return 6, nil
 }
 
-type ProfinetIOARBlockReq struct {
-	BlockHeader                      ProfinetIOBlockHeader
+type PNIOARBlockReq struct {
+	BlockHeader                      PNIOBlockHeader
 	ARType                           uint16
 	ARUUID                           []byte // 16 byte
 	SessionKey                       uint16
 	CMInitiatorMac                   net.HardwareAddr // 6 byte
 	CMInitiatorObjectUUID            []byte           // 16 byte
-	Properties                       uint32
+	ARProperties                     uint32
 	CMInitiatorActivityTimeoutFactor uint16
 	CMInitiatorUDPRTPort             uint16
 	CMInitiatorStationNameLength     uint16
 	CMInitiatorStationName           string
 }
 
-func (p *ProfinetIOARBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (p *PNIOARBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// length without header
 	if len(data) < 50 {
-		return errors.New("Malformed ProfinetIOARBlockReq")
+		return errors.New("Malformed PNIOARBlockReq")
 	}
 
 	p.ARType = binary.BigEndian.Uint16(data[0:2])
@@ -823,7 +518,7 @@ func (p *ProfinetIOARBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFe
 	copy(p.CMInitiatorMac, data[20:26])
 	p.CMInitiatorObjectUUID = make([]byte, 16)
 	copy(p.CMInitiatorObjectUUID, data[26:42])
-	p.Properties = binary.BigEndian.Uint32(data[42:46])
+	p.ARProperties = binary.BigEndian.Uint32(data[42:46])
 	p.CMInitiatorActivityTimeoutFactor = binary.BigEndian.Uint16(data[46:48])
 	p.CMInitiatorUDPRTPort = binary.BigEndian.Uint16(data[48:50])
 	p.CMInitiatorStationNameLength = binary.BigEndian.Uint16(data[50:52])
@@ -832,18 +527,42 @@ func (p *ProfinetIOARBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFe
 	return nil
 }
 
-type ProfinetIOIODControlReq struct {
-	BlockHeader            ProfinetIOBlockHeader
+type PNIOIODControlCmd uint16
+
+const (
+	PNIOIODControlCmdPrmEnd          PNIOIODControlCmd = 1 << 0
+	PNIOIODControlCmdAppRdy          PNIOIODControlCmd = 1 << 1
+	PNIOIODControlCmdRelease         PNIOIODControlCmd = 1 << 2
+	PNIOIODControlCmdDone            PNIOIODControlCmd = 1 << 3
+	PNIOIODControlCmdRdyForCompanion PNIOIODControlCmd = 1 << 4
+	PNIOIODControlCmdRdyForRTC3      PNIOIODControlCmd = 1 << 5
+	PNIOIODControlCmdPrmBegin        PNIOIODControlCmd = 1 << 6
+)
+
+// used as request and response
+type PNIOIODControlReq struct {
+	BlockHeader            PNIOBlockHeader
 	ARUUID                 []byte
 	SessionKey             uint16
-	ControlCommand         uint16
+	ControlCommand         PNIOIODControlCmd
 	ControlBlockProperties uint16
 }
 
-func (p *ProfinetIOIODControlReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func NewPNIOIODControlResFromReq(req *PNIOIODControlReq) (res PNIOIODControlReq) {
+	res.BlockHeader = NewPNIOBlockHeader(PNIOBlockHeaderPRMEndRes)
+	res.ARUUID = make([]byte, 16)
+	copy(res.ARUUID, req.ARUUID)
+	res.SessionKey = req.SessionKey
+	// res.ControlCommand =         cmd
+	// res.ControlBlockProperties = 0x0000
+
+	return res
+}
+
+func (p *PNIOIODControlReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// length without header
 	if len(data) < 26 {
-		return errors.New("Malformed ProfinetIOIODControlReq")
+		return errors.New("Malformed PNIOIODControlReq")
 	}
 
 	// 2 bytes reserved
@@ -851,13 +570,13 @@ func (p *ProfinetIOIODControlReq) DecodeFromBytes(data []byte, df gopacket.Decod
 	copy(p.ARUUID, data[2:18])
 	p.SessionKey = binary.BigEndian.Uint16(data[18:20])
 	// 2 bytes reserved
-	p.ControlCommand = binary.BigEndian.Uint16(data[22:24])
+	p.ControlCommand = PNIOIODControlCmd(binary.BigEndian.Uint16(data[22:24]))
 	p.ControlBlockProperties = binary.BigEndian.Uint16(data[24:26])
 
 	return nil
 }
 
-func (r *ProfinetIOIODControlReq) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (r *PNIOIODControlReq) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 26
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -868,7 +587,7 @@ func (r *ProfinetIOIODControlReq) SerializeTo(b gopacket.SerializeBuffer, opts g
 	copy(bytes[2:18], r.ARUUID)
 	binary.BigEndian.PutUint16(bytes[18:20], r.SessionKey)
 	// 2 bytes reserved
-	binary.BigEndian.PutUint16(bytes[22:24], r.ControlCommand)
+	binary.BigEndian.PutUint16(bytes[22:24], uint16(r.ControlCommand))
 	binary.BigEndian.PutUint16(bytes[24:26], r.ControlBlockProperties)
 
 	if opts.FixLengths {
@@ -884,16 +603,113 @@ func (r *ProfinetIOIODControlReq) SerializeTo(b gopacket.SerializeBuffer, opts g
 	return lenPacket, nil
 }
 
-type ProfinetIOIODWriteReqHeader struct {
-	BlockHeader      ProfinetIOBlockHeader
+// type PNIOIOXBlockReq struct {
+// 	Header PNIOBlockHeader
+// 	// 2 Byte Padding
+// 	ARUUID []byte
+// 	SessionKey uint16
+// 	// 2 Byte Padding
+
+// }
+
+type MultipleInterfaceModeNameOfDeviceValue bool
+
+const (
+	LLDPPortIDContainNameOfPort                 MultipleInterfaceModeNameOfDeviceValue = false
+	LLDPPortIDContainNameOfPortAndNameOfStation MultipleInterfaceModeNameOfDeviceValue = true
+)
+
+type PNIOPDInterfaceAdjust struct {
+	Header                            PNIOBlockHeader
+	MultipleInterfaceModeNameOfDevice MultipleInterfaceModeNameOfDeviceValue
+}
+
+func (p *PNIOPDInterfaceAdjust) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+	// length WITH header
+	if len(data) < 12 {
+		return errors.New("PNIOPDInterfaceAdjust too small")
+	}
+
+	// redecode block header, because length is needed here TODO
+	header := &PNIOBlockHeader{}
+	err := header.DecodeFromBytes(data, df)
+	if err != nil {
+		return err
+	}
+
+	if header.Type != PNIOBlockHeaderPDInterfaceAdjust {
+		return errors.New("BlockHeaderType mismatch")
+	}
+	if header.Length != 8 {
+		return errors.New("BlockHeaderLength mismatch")
+	}
+	if header.VersionHigh != 1 {
+		return errors.New("BlockHeaderVersion mismatch")
+	}
+
+	// 2 byte padding
+	p.Header = *header
+	p.MultipleInterfaceModeNameOfDevice = MultipleInterfaceModeNameOfDeviceValue(data[11]&0x01 > 0)
+
+	return nil
+}
+
+type PNIOIODReadWriteReqHeader struct {
+	BlockHeader      PNIOBlockHeader
 	SeqNumber        uint16
 	ARUUID           []byte
 	API              uint32
 	SlotNumber       uint16
 	SubSlotNumber    uint16
-	Index            uint16
+	Index            PNIOIODReadWriteReqHeaderIndex
 	RecordDataLength uint32
-	ParameterData    []byte
+}
+
+type PNIOIODReadWriteReqHeaderIndex uint16
+
+const (
+	PNIOIODReadWriteReqPDInterfaceAdjust PNIOIODReadWriteReqHeaderIndex = 0x8071
+	PNIOIODWriteMultipleWrite            PNIOIODReadWriteReqHeaderIndex = 0xe040
+)
+
+type PNIOIODReadReq struct {
+	Header PNIOIODReadWriteReqHeader
+	// ReccordDataReadQuery TODO
+}
+
+func (p *PNIOIODReadReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
+	// length WITH header
+	if len(data) < 64 {
+		return 0, errors.New("PNIOIODReadReq too small")
+	}
+
+	// redecode block header, because length is needed here TODO
+	blockHeader := &PNIOBlockHeader{}
+	err := blockHeader.DecodeFromBytes(data[0:], df)
+	if err != nil {
+		return 0, err
+	}
+	p.Header.BlockHeader = *blockHeader
+
+	p.Header.SeqNumber = binary.BigEndian.Uint16(data[6:8])
+	p.Header.ARUUID = make([]byte, 16)
+	copy(p.Header.ARUUID, data[8:24])
+	p.Header.API = binary.BigEndian.Uint32(data[24:28])
+	p.Header.SlotNumber = binary.BigEndian.Uint16(data[28:30])
+	p.Header.SubSlotNumber = binary.BigEndian.Uint16(data[30:32])
+	// 2 byte padding
+	p.Header.Index = PNIOIODReadWriteReqHeaderIndex(binary.BigEndian.Uint16(data[34:36]))
+	p.Header.RecordDataLength = binary.BigEndian.Uint32(data[36:40])
+	// 24 byte padding
+
+	// TODO recorddatareadqueries
+
+	return 64, nil
+}
+
+type PNIOIODWriteReq struct {
+	Header     PNIOIODReadWriteReqHeader
+	RecordData []byte
 }
 
 func Max(x, y int64) int64 {
@@ -910,66 +726,76 @@ func Min(x, y int64) int64 {
 	return y
 }
 
-func (p *ProfinetIOIODWriteReqHeader) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (p *PNIOIODWriteReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
 	// length WITH header
-	if len(data) < 56 {
-		return errors.New("Malformed ProfinetIOIODWriteReqHeader")
+	if len(data) < 64 {
+		return 0, errors.New("PNIOIODWriteReq too small")
 	}
 
 	// redecode block header, because length is needed here TODO
-	blockHeader := &ProfinetIOBlockHeader{}
+	blockHeader := &PNIOBlockHeader{}
 	err := blockHeader.DecodeFromBytes(data[0:], df)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	p.BlockHeader = *blockHeader
+	p.Header.BlockHeader = *blockHeader
 
-	p.SeqNumber = binary.BigEndian.Uint16(data[6:8])
-	p.ARUUID = make([]byte, 16)
-	copy(p.ARUUID, data[8:24])
-	p.API = binary.BigEndian.Uint32(data[24:28])
-	p.SlotNumber = binary.BigEndian.Uint16(data[28:30])
-	p.SubSlotNumber = binary.BigEndian.Uint16(data[30:32])
+	p.Header.SeqNumber = binary.BigEndian.Uint16(data[6:8])
+	p.Header.ARUUID = make([]byte, 16)
+	copy(p.Header.ARUUID, data[8:24])
+	p.Header.API = binary.BigEndian.Uint32(data[24:28])
+	p.Header.SlotNumber = binary.BigEndian.Uint16(data[28:30])
+	p.Header.SubSlotNumber = binary.BigEndian.Uint16(data[30:32])
 	// 2 byte padding
-	p.Index = binary.BigEndian.Uint16(data[34:36])
-	p.RecordDataLength = binary.BigEndian.Uint32(data[36:40])
-	arrayLen := Min(int64(p.RecordDataLength), int64(128))
-	p.ParameterData = make([]byte, arrayLen)
-	// log.Printf("record data has length %d and starts after %d byte", arrayLen, p.BlockHeader.Length)
-	dataOffset := int(p.BlockHeader.Length) + 4
-	copy(p.ParameterData, data[dataOffset:dataOffset+int(arrayLen)])
+	p.Header.Index = PNIOIODReadWriteReqHeaderIndex(binary.BigEndian.Uint16(data[34:36]))
+	p.Header.RecordDataLength = binary.BigEndian.Uint32(data[36:40])
+	// 24 byte padding
 
-	// fmt.Println("ProfinetIO - IODWriteReqHeader")
-	// fmt.Printf("\tBlockHeader.Type: %x\n", p.BlockHeader.Type)
-	// fmt.Printf("\tBlockHeader.VersionHigh: %x\n", p.BlockHeader.VersionHigh)
-	// fmt.Printf("\tBlockHeader.VersionLow: %x\n", p.BlockHeader.VersionLow)
-	// fmt.Println("\tSeqNumber: ", p.SeqNumber)
-	// fmt.Printf("\tARUUID: %x\n", p.ARUUID)
-	// fmt.Println("\tAPI: ", p.API)
-	// fmt.Println("\tSlotNumber: ", p.SlotNumber)
-	// fmt.Println("\tSubSlotNumber: ", p.SubSlotNumber)
-	// fmt.Println("\tIndex: ", p.Index)
-	// fmt.Println("\tRecordDataLength: ", p.RecordDataLength)
-	// fmt.Printf("\tData: % x\n", p.ParameterData)
+	numBytesDecoded := int(p.Header.BlockHeader.Length) + 4
+	if p.Header.Index != PNIOIODWriteMultipleWrite {
+		// clip maximum record data length
+		arrayLen := Min(int64(p.Header.RecordDataLength), int64(128))
+		// log.Printf("record data has length %d and starts after %d byte", arrayLen, p.BlockHeader.Length)
+		p.RecordData = make([]byte, arrayLen)
+		copy(p.RecordData, data[numBytesDecoded:numBytesDecoded+int(arrayLen)])
+		numBytesDecoded = numBytesDecoded + int(arrayLen)
+	}
 
-	return nil
+	return numBytesDecoded, nil
 }
 
-type ProfinetIOIODWriteResHeader struct {
-	BlockHeader      ProfinetIOBlockHeader
+type PNIOIODWriteResHeader struct {
+	BlockHeader      PNIOBlockHeader
 	SeqNumber        uint16
 	ARUUID           []byte
 	API              uint32
 	SlotNumber       uint16
 	SubSlotNumber    uint16
-	Index            uint16
+	Index            PNIOIODReadWriteReqHeaderIndex
 	RecordDataLength uint32
 	AdditionalValue1 uint16
 	AdditionalValue2 uint16
 	Status           uint32
 }
 
-func (r *ProfinetIOIODWriteResHeader) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func NewPNIOIODWriteResFromReq(req *PNIOIODReadWriteReqHeader) (res PNIOIODWriteResHeader) {
+	res.BlockHeader = NewPNIOBlockHeader(PNIOBlockHeaderIODWriteRes)
+	res.SeqNumber = req.SeqNumber
+	res.ARUUID = make([]byte, 16)
+	copy(res.ARUUID, req.ARUUID) // TODO get from handler
+	res.API = req.API
+	res.SlotNumber = req.SlotNumber
+	res.SubSlotNumber = req.SubSlotNumber
+	res.Index = req.Index
+	res.RecordDataLength = req.RecordDataLength
+	res.AdditionalValue1 = 0
+	res.AdditionalValue2 = 0
+	res.Status = 0 // 0 = success
+
+	return res
+}
+
+func (r *PNIOIODWriteResHeader) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 58
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -981,7 +807,7 @@ func (r *ProfinetIOIODWriteResHeader) SerializeTo(b gopacket.SerializeBuffer, op
 	binary.BigEndian.PutUint16(bytes[22:24], r.SlotNumber)
 	binary.BigEndian.PutUint16(bytes[24:26], r.SubSlotNumber)
 	// 2 byte padding
-	binary.BigEndian.PutUint16(bytes[28:30], r.Index)
+	binary.BigEndian.PutUint16(bytes[28:30], uint16(r.Index))
 	binary.BigEndian.PutUint32(bytes[30:34], r.RecordDataLength)
 	binary.BigEndian.PutUint16(bytes[34:36], r.AdditionalValue1)
 	binary.BigEndian.PutUint16(bytes[36:38], r.AdditionalValue2)
@@ -1001,8 +827,8 @@ func (r *ProfinetIOIODWriteResHeader) SerializeTo(b gopacket.SerializeBuffer, op
 	return lenPacket, nil
 }
 
-type ProfinetIOIOCRBlockReq struct {
-	BlockHeader           ProfinetIOBlockHeader
+type PNIOIOCRBlockReq struct {
+	BlockHeader           PNIOBlockHeader
 	IOCRType              uint16
 	IOCRReference         uint16
 	LT                    uint16
@@ -1026,10 +852,10 @@ type ProfinetIOIOCRBlockReq struct {
 	IOCSs                 []byte // TODO better type
 }
 
-func (p *ProfinetIOIOCRBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (p *PNIOIOCRBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// length without header
 	if len(data) < 48 {
-		return errors.New("Malformed ProfinetIOARBlockReq")
+		return errors.New("Malformed PNIOARBlockReq")
 	}
 
 	// TODO decode header
@@ -1061,16 +887,16 @@ func (p *ProfinetIOIOCRBlockReq) DecodeFromBytes(data []byte, df gopacket.Decode
 	return nil
 }
 
-type ProfinetIOExpectedSubmoduleBlockReq struct {
-	BlockHeader  ProfinetIOBlockHeader
+type PNIOExpectedSubmoduleBlockReq struct {
+	BlockHeader  PNIOBlockHeader
 	NumberOfAPIs uint16
 	APIs         []ProfinetIOSubmoduleAPI
 }
 
-func (p *ProfinetIOExpectedSubmoduleBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (p *PNIOExpectedSubmoduleBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// length without header
 	if len(data) < 2 {
-		return errors.New("Malformed ProfinetIOExpectedSubmoduleBlockReq")
+		return errors.New("Malformed PNIOExpectedSubmoduleBlockReq")
 	}
 
 	lenPacket := 2
@@ -1168,8 +994,8 @@ type ProfinetIODataDescription struct {
 	LengthIOPS          uint8
 }
 
-type ProfinetIOAlarmCRBlockReq struct {
-	BlockHeader          ProfinetIOBlockHeader
+type PNIOAlarmCRBlockReq struct {
+	BlockHeader          PNIOBlockHeader
 	AlarmCRType          uint16
 	LT                   uint16
 	Properties           uint32
@@ -1181,10 +1007,10 @@ type ProfinetIOAlarmCRBlockReq struct {
 	AlarmCRTagHeaderLow  uint16
 }
 
-func (p *ProfinetIOAlarmCRBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+func (p *PNIOAlarmCRBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 	// length without header
 	if len(data) < 20 {
-		return errors.New("Malformed ProfinetIOAlarmCRBlockReq")
+		return errors.New("Malformed PNIOAlarmCRBlockReq")
 	}
 
 	p.AlarmCRType = binary.LittleEndian.Uint16(data[0:2])
@@ -1210,8 +1036,8 @@ type ProfinetIOART struct {
 	ARType   uint16 // device only
 }
 
-type ProfinetIOARBlockRes struct {
-	BlockHeader          ProfinetIOBlockHeader
+type PNIOARBlockRes struct {
+	BlockHeader          PNIOBlockHeader
 	ARType               uint16
 	ARUUID               []byte // 16 byte
 	SessionKey           uint16
@@ -1221,7 +1047,7 @@ type ProfinetIOARBlockRes struct {
 	DataHack []byte
 }
 
-func (r *ProfinetIOARBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (r *PNIOARBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 28 + len(r.DataHack)
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -1246,14 +1072,14 @@ func (r *ProfinetIOARBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopa
 	return lenPacket, nil
 }
 
-type ProfinetIOIOCRBlockRes struct {
-	BlockHeader   ProfinetIOBlockHeader
+type PNIOIOCRBlockRes struct {
+	BlockHeader   PNIOBlockHeader
 	IOCRType      uint16
 	IOCRReference uint16
 	FrameID       uint16
 }
 
-func (r *ProfinetIOIOCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (r *PNIOIOCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 6
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -1275,14 +1101,14 @@ func (r *ProfinetIOIOCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts go
 	return lenPacket, nil
 }
 
-type ProfinetIOAlarmCRBlockRes struct {
-	BlockHeader         ProfinetIOBlockHeader
+type PNIOAlarmCRBlockRes struct {
+	BlockHeader         PNIOBlockHeader
 	AlarmCRType         uint16
 	LocalAlarmReference uint16
 	MaxAlarmDataLength  uint16
 }
 
-func (r *ProfinetIOAlarmCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (r *PNIOAlarmCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 6
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -1304,13 +1130,13 @@ func (r *ProfinetIOAlarmCRBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts
 	return lenPacket, nil
 }
 
-type ProfinetIOModuleDiffBlock struct {
-	BlockHeader  ProfinetIOBlockHeader
+type PNIOModuleDiffBlock struct {
+	BlockHeader  PNIOBlockHeader
 	NumberOfAPIs uint16
 	APIs         []ProfinetIOIOCAPI
 }
 
-func (r *ProfinetIOModuleDiffBlock) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (r *PNIOModuleDiffBlock) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 0
 	for _, t := range r.APIs {
 		lenBlock, err := t.SerializeTo(b, opts)
@@ -1332,6 +1158,33 @@ func (r *ProfinetIOModuleDiffBlock) SerializeTo(b gopacket.SerializeBuffer, opts
 
 	if opts.FixLengths {
 		// + 2 for NumberOfAPIs
+		r.BlockHeader.Length = uint16(lenPacket)
+	}
+	lenBlock, err := r.BlockHeader.SerializeTo(b, opts)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + lenBlock
+
+	return lenPacket, nil
+}
+
+type PNIOARRPCServerBlockRes struct {
+	BlockHeader            PNIOBlockHeader
+	CMInitiatorStationName string
+}
+
+func (r *PNIOARRPCServerBlockRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	lenPacket := 2 + len(r.CMInitiatorStationName)
+	bytes, err := b.PrependBytes(lenPacket)
+	if err != nil {
+		return lenPacket, err
+	}
+
+	binary.BigEndian.PutUint16(bytes[0:], uint16(len(r.CMInitiatorStationName)))
+	copy(bytes[2:], r.CMInitiatorStationName)
+
+	if opts.FixLengths {
 		r.BlockHeader.Length = uint16(lenPacket)
 	}
 	lenBlock, err := r.BlockHeader.SerializeTo(b, opts)
@@ -1370,6 +1223,14 @@ func (t *ProfinetIOIOCAPI) SerializeTo(b gopacket.SerializeBuffer, opts gopacket
 func (r *ProfinetIO) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
 	lenPacket := 0
 
+	if r.ARServerRes != nil {
+		lenBlock, err := r.ARServerRes.SerializeTo(b, opts)
+		if err != nil {
+			return err
+		}
+		lenPacket = lenPacket + lenBlock
+	}
+
 	if r.ModuleDiffBlock != nil {
 		lenBlock, err := r.ModuleDiffBlock.SerializeTo(b, opts)
 		if err != nil {
@@ -1386,26 +1247,42 @@ func (r *ProfinetIO) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seria
 		lenPacket = lenPacket + lenBlock
 	}
 
-	// for _, t := range r.IOCRBlockRess {
 	for i := len(r.IOCRBlockRess) - 1; i >= 0; i-- {
-		t := r.IOCRBlockRess[i]
-		lenBlock, err := t.SerializeTo(b, opts)
+		lenBlock, err := r.IOCRBlockRess[i].SerializeTo(b, opts)
 		if err != nil {
 			return err
 		}
 		lenPacket = lenPacket + lenBlock
 	}
 
-	for _, t := range r.ARBlockRess {
-		lenBlock, err := t.SerializeTo(b, opts)
+	if r.ARBlockRes != nil {
+		lenBlock, err := r.ARBlockRes.SerializeTo(b, opts)
 		if err != nil {
 			return err
 		}
 		lenPacket = lenPacket + lenBlock
 	}
 
-	if r.IODWriteResHeader != nil {
-		lenBlock, err := r.IODWriteResHeader.SerializeTo(b, opts)
+	for i := len(r.IODWriteRess) - 1; i >= 0; i-- {
+		lenBlock, err := r.IODWriteRess[i].SerializeTo(b, opts)
+		if err != nil {
+			return err
+		}
+		lenPacket = lenPacket + lenBlock
+	}
+	if len(r.IODWriteRess) > 1 {
+		block := &PNIOIODWriteResHeader{
+			BlockHeader:   NewPNIOBlockHeader(PNIOBlockHeaderIODWriteRes),
+			SeqNumber:     0,
+			ARUUID:        make([]byte, 40),
+			API:           0xffffffff,
+			SlotNumber:    0xffff,
+			SubSlotNumber: 0xffff,
+			Index:         PNIOIODWriteMultipleWrite,
+		}
+		copy(block.ARUUID, r.IODWriteRess[0].ARUUID)
+
+		lenBlock, err := block.SerializeTo(b, opts)
 		if err != nil {
 			return err
 		}
@@ -1469,80 +1346,61 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 	for numBytes > 0 {
 		offset := 20 + (int(p.ArrayActualCount) - numBytes)
 
-		blockHeader := &ProfinetIOBlockHeader{}
+		blockHeader := &PNIOBlockHeader{}
 		err := blockHeader.DecodeFromBytes(data[offset:], df)
 		if err != nil {
 			log.Println("PN-IO Block Header decode error:", err)
 			return err
 		}
 
-		// log.Printf("BlockHeader.Type: %x\n", blockHeader.Type)
-
+		var numBytesDecoded int
 		switch blockHeader.Type {
-		case ProfinetIOBlockHeaderTypeARBlockReq:
-			b := &ProfinetIOARBlockReq{}
-			err := b.DecodeFromBytes(data[offset+6:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
-			}
-			b.BlockHeader = *blockHeader
-			p.ARBlockReqs = append(p.ARBlockReqs, *b)
-		case ProfinetIOBlockHeaderTypeIOCRBlockReq:
-			b := &ProfinetIOIOCRBlockReq{}
-			err := b.DecodeFromBytes(data[offset+6:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
-			}
-			b.BlockHeader = *blockHeader
+		case PNIOBlockHeaderARBlockReq:
+			b := &PNIOARBlockReq{}
+			err = b.DecodeFromBytes(data[offset+6:], df)
+			p.ARBlockReq = b
+		case PNIOBlockHeaderIOCRBlockReq:
+			b := &PNIOIOCRBlockReq{}
+			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.IOCRBlockReqs = append(p.IOCRBlockReqs, *b)
-		case ProfinetIOBlockHeaderTypeAlarmCRBlockReq:
-			b := &ProfinetIOAlarmCRBlockReq{}
-			err := b.DecodeFromBytes(data[offset+6:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
-			}
-			b.BlockHeader = *blockHeader
+		case PNIOBlockHeaderAlarmCRBlockReq:
+			b := &PNIOAlarmCRBlockReq{}
+			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.AlarmCRBlockReqs = append(p.AlarmCRBlockReqs, *b)
-		case ProfinetIOBlockHeaderTypeExpectedSubmoduleBlockReq:
-			b := &ProfinetIOExpectedSubmoduleBlockReq{}
-			err := b.DecodeFromBytes(data[offset+6:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
-			}
-			b.BlockHeader = *blockHeader
+		case PNIOBlockHeaderExpectedSubmoduleBlock:
+			b := &PNIOExpectedSubmoduleBlockReq{}
+			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.ExpectedSubmoduleBlockReqs = append(p.ExpectedSubmoduleBlockReqs, *b)
-		case ProfinetIOBlockHeaderTypeIODControlReq, ProfinetIOBlockHeaderTypeReleaseReq:
-			b := &ProfinetIOIODControlReq{}
-			err := b.DecodeFromBytes(data[offset+6:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
-			}
-			b.BlockHeader = *blockHeader
+		case PNIOBlockHeaderPRMEndReq, PNIOBlockHeaderReleaseBlockReq:
+			b := &PNIOIODControlReq{}
+			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.IODControlReq = b
-		case ProfinetIOBlockHeaderTypeIODWriteReqHeader:
-			b := &ProfinetIOIODWriteReqHeader{}
-			err := b.DecodeFromBytes(data[offset:], df)
-			if err != nil {
-				log.Println("PN-IO Block Decode error:", err)
-				return err
+		case PNIOBlockHeaderIODWriteReqHeader:
+			b := &PNIOIODWriteReq{}
+			numBytesDecoded, err = b.DecodeFromBytes(data[offset:], df)
+			if b.Header.Index != PNIOIODWriteMultipleWrite {
+				p.IODWriteReqs = append(p.IODWriteReqs, *b)
 			}
-			b.BlockHeader = *blockHeader
-			p.IODWriteReqHeader = b
-
-			// no more data following this block
-			numBytes = 0
+		case PNIOBlockHeaderIODReadReqHeader:
+			b := &PNIOIODReadReq{}
+			numBytesDecoded, err = b.DecodeFromBytes(data[offset:], df)
+			p.IODReadReq = b
 		default:
-			log.Printf("unknown header %x", blockHeader.Type)
+			log.Printf("unknown header 0x%x", blockHeader.Type)
 			return errors.New("unknown block header type: 0x" + strconv.FormatInt(int64(blockHeader.Type), 16))
+		}
+		if err != nil {
+			log.Println("PN-IO Block Decode error:", err)
+			return err
+		}
+
+		// TODO quick and dirty hack? ;)
+		if numBytesDecoded == 0 {
+			numBytesDecoded = int(blockHeader.Length) + 4
 		}
 
 		// remaining number of bytes
-		numBytes = numBytes - int(blockHeader.Length) - 4
+		numBytes = numBytes - numBytesDecoded
 	}
 
 	return nil

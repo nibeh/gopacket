@@ -552,7 +552,14 @@ func (d *LLDPInfo8023) ToOrgSpecificTLVs() []LLDPOrgSpecificTLV {
 		SubType: uint8(LLDP8023SubtypeMACPHY),
 		Info:    make([]byte, 5),
 	}
-	tlvMACPHYConfigStatus.Info[0] = 0x00
+	var macPhyStatus uint8
+	if d.MACPHYConfigStatus.AutoNegEnabled {
+		macPhyStatus = macPhyStatus | 0x02
+	}
+	if d.MACPHYConfigStatus.AutoNegSupported {
+		macPhyStatus = macPhyStatus | 0x01
+	}
+	tlvMACPHYConfigStatus.Info[0] = macPhyStatus
 	binary.BigEndian.PutUint16(tlvMACPHYConfigStatus.Info[1:], d.MACPHYConfigStatus.AutoNegCapability)
 	binary.BigEndian.PutUint16(tlvMACPHYConfigStatus.Info[3:], d.MACPHYConfigStatus.MAUType)
 
