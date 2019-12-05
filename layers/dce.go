@@ -305,8 +305,27 @@ func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 		if bytes.Equal(d.InterfaceID, PNIODCERPCDeviceInterfaceID()) ||
 			bytes.Equal(d.InterfaceID, PNIODCERPCControllerInterfaceID()) {
 			return p.NextDecoder(LayerTypeProfinetIO)
+		} else if bytes.Equal(d.InterfaceID, DCERPCEndpointMapperInterfaceID()) {
+			// TODO
 		}
 	}
 
 	return nil
+}
+
+type DCERPCEndpointMapper struct {
+	InquiryType         uint32
+	ObjectReferentID    uint32
+	ObjectUUID          []byte // 16 byte UUID
+	InterfaceReferentID uint32
+	InterfaceUUID       []byte // 16 byte UUID
+	VersionMajor        uint16
+	VersionMinor        uint16
+	VersionOption       uint32
+	Handle              []byte // 20 byte
+	MaxEntries          uint32
+}
+
+func DCERPCEndpointMapperInterfaceID() []byte {
+	return []byte{0xe1, 0xaf, 0x83, 0x08, 0x5d, 0x1f, 0x11, 0xc9, 0x91, 0xa4, 0x08, 0x00, 0x2b, 0x14, 0xa0, 0xfa}
 }

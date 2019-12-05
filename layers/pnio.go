@@ -11,12 +11,10 @@ import (
 )
 
 func PNIODCERPCDeviceInterfaceID() []byte {
-	// TODO big or little endian
 	return []byte{0xde, 0xa0, 0x00, 0x01, 0x6c, 0x97, 0x11, 0xd1, 0x82, 0x71, 0x00, 0xa0, 0x24, 0x42, 0xdf, 0x7d}
 }
 
 func PNIODCERPCControllerInterfaceID() []byte {
-	// TODO big or little endian
 	return []byte{0xde, 0xa0, 0x00, 0x02, 0x6c, 0x97, 0x11, 0xd1, 0x82, 0x71, 0x00, 0xa0, 0x24, 0x42, 0xdf, 0x7d}
 }
 
@@ -145,10 +143,10 @@ const (
 	PNIOBlockHeaderARVendorBlockRes  PNIOBlockHeaderType = 0x8108
 
 	PNIOBlockHeaderPRMEndRes           PNIOBlockHeaderType = 0x8110
-	PNIOBlockHeaderPRMEndPlugAlarmRes  PNIOBlockHeaderType = 0x8110
-	PNIOBlockHeaderAppRdyRes           PNIOBlockHeaderType = 0x8110
-	PNIOBlockHeaderAppRedyPlugAlarmRes PNIOBlockHeaderType = 0x8110
-	PNIOBlockHeaderReleaseBlockRes     PNIOBlockHeaderType = 0x8110
+	PNIOBlockHeaderPRMEndPlugAlarmRes  PNIOBlockHeaderType = 0x8111
+	PNIOBlockHeaderAppRdyRes           PNIOBlockHeaderType = 0x8112
+	PNIOBlockHeaderAppRedyPlugAlarmRes PNIOBlockHeaderType = 0x8113
+	PNIOBlockHeaderReleaseBlockRes     PNIOBlockHeaderType = 0x8114
 )
 
 type PNIOBlockHeader struct {
@@ -1076,7 +1074,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			b := &PNIOExpectedSubmoduleBlockReq{}
 			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.ExpectedSubmoduleBlockReqs = append(p.ExpectedSubmoduleBlockReqs, *b)
-		case PNIOBlockHeaderPRMEndReq, PNIOBlockHeaderReleaseBlockReq:
+		case PNIOBlockHeaderPRMEndReq, PNIOBlockHeaderReleaseBlockReq, PNIOBlockHeaderAppRdyRes:
 			b := &PNIOIODControlReq{}
 			err = b.DecodeFromBytes(data[offset+6:], df)
 			p.IODControlReq = b
@@ -1091,8 +1089,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 			numBytesDecoded, err = b.DecodeFromBytes(data[offset:], df)
 			p.IODReadReq = b
 		default:
-			log.Printf("unknown header 0x%x", blockHeader.Type)
-			return errors.New("unknown block header type: 0x" + strconv.FormatInt(int64(blockHeader.Type), 16))
+			return errors.New("unhandled block header type: 0x" + strconv.FormatInt(int64(blockHeader.Type), 16))
 		}
 		if err != nil {
 			log.Println("PN-IO Block Decode error:", err)
