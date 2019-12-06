@@ -373,6 +373,7 @@ type PNIOIODReadWriteReqHeaderIndex uint16
 const (
 	PNIOIODReadWriteReqPDInterfaceAdjust PNIOIODReadWriteReqHeaderIndex = 0x8071
 	PNIOIODWriteMultipleWrite            PNIOIODReadWriteReqHeaderIndex = 0xe040
+	PNIOIODReadWriteReqIndexIM0          PNIOIODReadWriteReqHeaderIndex = 0xaff0
 )
 
 type PNIOIODReadReq struct {
@@ -530,6 +531,25 @@ func (r *PNIOIODWriteResHeader) SerializeTo(b gopacket.SerializeBuffer, opts gop
 	return lenPacket, nil
 }
 
+type PNIOIODataObj struct {
+	SlotNumber    uint16
+	SubslotNumber uint16
+	FrameOffset   uint16
+}
+
+func (p *PNIOIODataObj) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) (int, error) {
+	// length without header
+	if len(data) < 6 {
+		return 0, errors.New("PNIOIODataObj too small")
+	}
+
+	p.SlotNumber = binary.BigEndian.Uint16(data[0:2])
+	p.SubslotNumber = binary.BigEndian.Uint16(data[2:4])
+	p.FrameOffset = binary.BigEndian.Uint16(data[4:6])
+
+	return 6, nil
+}
+
 type PNIOIOCRBlockReq struct {
 	BlockHeader           PNIOBlockHeader
 	IOCRType              uint16
@@ -550,7 +570,7 @@ type PNIOIOCRBlockReq struct {
 	NumberOfAPIs          uint16
 	API                   uint32
 	NumberOfIODataObjects uint16
-	DataObjects           []byte // TODO better type
+	DataObjects           []PNIOIODataObj // TODO better type
 	NumberOfIOCS          uint16
 	IOCSs                 []byte // TODO better type
 }
@@ -582,8 +602,21 @@ func (p *PNIOIOCRBlockReq) DecodeFromBytes(data []byte, df gopacket.DecodeFeedba
 	p.NumberOfAPIs = binary.BigEndian.Uint16(data[38:40])
 	p.API = binary.BigEndian.Uint32(data[40:44])
 	p.NumberOfIODataObjects = binary.BigEndian.Uint16(data[44:46])
+
+	log.Println(" >> ", p.NumberOfIODataObjects)
+
+	offset := 46
+	for i := 0; i < int(p.NumberOfIODataObjects); i++ {
+		dobj := &PNIOIODataObj{}
+		numBytesDecoded, err := dobj.DecodeFromBytes(data[offset:], df)
+		if err != nil {
+			return err
+		}
+		offset = offset + numBytesDecoded
+		p.DataObjects = append(p.DataObjects, *dobj)
+	}
 	// TODO decode completely
-	// DataObjects           []byte // TODO better type
+
 	// NumberOfIOCS          uint16
 	// IOCSs                 []byte
 
@@ -1030,7 +1063,7 @@ func (p *ProfinetIO) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) er
 	}
 
 	// check for little or big endian - TODO get this previous layer
-	if data[0] == 0 {
+	if data[4] == 0 {
 		p.ArgsMaximum = binary.BigEndian.Uint32(data[0:4])
 		p.ArgsLength = binary.BigEndian.Uint32(data[4:8])
 		p.ArrayMaximumCount = binary.BigEndian.Uint32(data[8:12])

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"log"
 
 	"github.com/google/gopacket"
 )
@@ -207,7 +208,7 @@ func (r *DCERPC) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error 
 	r.PacketType = DCERPCPacketType(data[1])
 	r.Flags1 = getFlags1(data[2])
 	r.Flags2 = uint8(data[3])
-	r.Encoding, _ = getEncoding(data[4:6]) // after one byte of pad
+	r.Encoding, _ = getEncoding(data[4:7]) // after one byte of pad
 	r.SerialHigh = uint8(data[7])
 	if r.Encoding.IntegerRepresentation == IntegerRepresentationLittleEndian {
 		// log.Println("\tLittle-Endian Encoding")
@@ -291,6 +292,7 @@ func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 	d := &DCERPC{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
+		log.Println("[decodeDCERPC] decodeFromByte error", err)
 		return err
 	}
 	p.AddLayer(d)
@@ -307,6 +309,8 @@ func decodeDCERPC(data []byte, p gopacket.PacketBuilder) error {
 			return p.NextDecoder(LayerTypeProfinetIO)
 		} else if bytes.Equal(d.InterfaceID, DCERPCEndpointMapperInterfaceID()) {
 			// TODO
+		} else {
+			// log.Printf("% x interface id does not match % x or % x\n", d.InterfaceID, PNIODCERPCDeviceInterfaceID(), PNIODCERPCControllerInterfaceID())
 		}
 	}
 
