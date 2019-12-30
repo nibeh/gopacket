@@ -207,7 +207,7 @@ func NewRPCResFromReq(req *RPC) RPC {
 	res := RPC{
 		Version:          0x04,
 		PacketType:       RPCPacketTypeResponse,
-		Flags1:           RPCFlags1{Idempotent: true, NoFack: true, LastFragment: true},
+		Flags1:           RPCFlags1{Idempotent: true},
 		Encoding:         RPCFormats{IntegerRepresentation: IntegerRepresentationBigEndian},
 		SerialHigh:       0x00,
 		ObjectID:         make([]byte, 16),
