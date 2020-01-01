@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/google/gopacket"
 )
@@ -356,7 +357,7 @@ func (r *PNIOIODControlReq) SerializeTo(b gopacket.SerializeBuffer, opts gopacke
 
 type PNIOIODReleaseReq struct {
 	PNIOReq
-	// TODO
+	ReleaseBlock PNIOReleaseBlock
 }
 
 func (p PNIOIODReleaseReq) LayerType() gopacket.LayerType { return LayerTypePNIOReleaseReq }
@@ -468,7 +469,6 @@ func (r *PNIOIODConnectRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacke
 // IODWriteRes IODWriteMultipleRes
 type PNIOIODWriteRes struct {
 	PNIORes
-
 	Records []PNIOIODWriteResHeader
 }
 
@@ -516,9 +516,38 @@ func (r *PNIOIODWriteRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.
 	}
 
 	// serialize res header
-	err := r.PNIORes.SerializeTo(b, opts)
+	return r.PNIORes.SerializeTo(b, opts)
+}
 
-	return err
+type PNIOIODReleaseRes struct {
+	PNIORes
+	ReleaseBlock PNIOReleaseBlock
+}
+
+func (p PNIOIODReleaseRes) LayerType() gopacket.LayerType { return LayerTypePNIOReleaseRes }
+
+func NewPNIOIODReleaseResFromReq(req *PNIOIODReleaseReq) (res PNIOIODReleaseRes) {
+	res.ArrayMaximumCount = req.ArrayMaximumCount
+
+	res.ReleaseBlock = *NewPNIOReleaseBlockFromReq(req.ReleaseBlock)
+
+	return res
+}
+
+func (r *PNIOIODReleaseRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
+	lenPacket, err := r.ReleaseBlock.SerializeTo(b, opts)
+	if err != nil {
+		return err
+	}
+
+	if opts.FixLengths {
+		r.ArgsLength = uint32(lenPacket)
+		r.ArrayOffset = 0
+		r.ArrayActualCount = uint32(lenPacket)
+	}
+
+	// serialize res header
+	return r.PNIORes.SerializeTo(b, opts)
 }
 
 type PNIOBlockHeaderType uint16
@@ -819,18 +848,43 @@ func (d *PNIOIM1Data) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Seri
 	return lenPacket, nil
 }
 
-type PNIORealIdentificationData struct {
+type PNIOIM234Data struct {
 	BlockHeader PNIOBlockHeader
-	Data        []byte // 54 byte ?
+	Data        []byte
 }
 
-func NewPNIORealIdentificationData() *PNIORealIdentificationData {
-	rec := &PNIORealIdentificationData{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderRealIdentificationData)}
-	rec.BlockHeader.VersionLow = 1
+func NewPNIOIM2Data() *PNIOIM234Data {
+	return &PNIOIM234Data{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderIM2), Data: make([]byte, 16)}
+}
+
+func NewPNIOIM2DataFromData(date time.Time) *PNIOIM234Data {
+	rec := NewPNIOIM2Data()
+	s := date.Format(time.RFC3339)
+	copy(rec.Data, s)
 	return rec
 }
 
-func (d *PNIORealIdentificationData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func NewPNIOIM3Data() *PNIOIM234Data {
+	return &PNIOIM234Data{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderIM3), Data: make([]byte, 54)}
+}
+
+func NewPNIOIM3DataFromData(descriptor string) *PNIOIM234Data {
+	rec := NewPNIOIM3Data()
+	copy(rec.Data, descriptor)
+	return rec
+}
+
+func NewPNIOIM4Data() *PNIOIM234Data {
+	return &PNIOIM234Data{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderIM4), Data: make([]byte, 54)}
+}
+
+func NewPNIOIM4DataFromData(signature string) *PNIOIM234Data {
+	rec := NewPNIOIM3Data()
+	copy(rec.Data, signature)
+	return rec
+}
+
+func (d *PNIOIM234Data) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	lenPacket := 54
 	bytes, err := b.PrependBytes(lenPacket)
 	if err != nil {
@@ -853,11 +907,60 @@ func (d *PNIORealIdentificationData) SerializeTo(b gopacket.SerializeBuffer, opt
 	return lenPacket, nil
 }
 
-type IM0FilterData struct {
-	IM0FilterDataBlocks []IM0FilterDataBlock
+// TODO combine this with another block?
+type PNIORealIdentificationData struct {
+	BlockHeader  PNIOBlockHeader
+	NumberOfAPIs uint16
+	APIs         []PNIOAPI
 }
 
-func (d *IM0FilterData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func NewPNIORealIdentificationData() *PNIORealIdentificationData {
+	return &PNIORealIdentificationData{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderRealIdentificationData)}
+}
+
+func (d *PNIORealIdentificationData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	// first encode all APIs
+	lenPacket := 0
+	for i := len(d.APIs) - 1; i >= 0; i-- {
+		lenBlock, err := d.APIs[i].SerializeTo(b, opts)
+		if err != nil {
+			return lenPacket, err
+		}
+		lenPacket = lenPacket + lenBlock
+	}
+
+	// set version low to 1 for multiple APIs
+	// if len(d.APIs) > 1 {
+	d.BlockHeader.VersionLow = 1 // TODO check
+	// }
+
+	// add number of APIs
+	bytes, err := b.PrependBytes(2)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + len(bytes)
+	binary.BigEndian.PutUint16(bytes[0:2], uint16(len(d.APIs)))
+
+	// encode block header
+	if opts.FixLengths {
+		d.BlockHeader.Length = uint16(lenPacket)
+	}
+
+	lenBlock, err := d.BlockHeader.SerializeTo(b, opts)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + lenBlock
+
+	return lenPacket, nil
+}
+
+type PNIOIM0FilterData struct {
+	IM0FilterDataBlocks []PNIOIM0FilterDataBlock
+}
+
+func (d *PNIOIM0FilterData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	// encode all IM0FilterDataBlocks
 	lenPacket := 0
 	for i := len(d.IM0FilterDataBlocks) - 1; i >= 0; i-- {
@@ -871,21 +974,21 @@ func (d *IM0FilterData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Se
 	return lenPacket, nil
 }
 
-type IM0FilterDataBlock struct {
+type PNIOIM0FilterDataBlock struct {
 	BlockHeader  PNIOBlockHeader
 	NumberOfAPIs uint16
 	APIs         []PNIOAPI
 }
 
-func NewIM0FilterDataBlock(t PNIOBlockHeaderType) *IM0FilterDataBlock {
+func NewPNIOIM0FilterDataBlock(t PNIOBlockHeaderType) *PNIOIM0FilterDataBlock {
 	// check t
 	if t >= PNIOBlockHeaderIM0FilterDataSubmodule && t <= PNIOBlockHeaderIM0FilterDataDevice {
-		return &IM0FilterDataBlock{BlockHeader: NewPNIOBlockHeader(t)}
+		return &PNIOIM0FilterDataBlock{BlockHeader: NewPNIOBlockHeader(t)}
 	}
 	return nil
 }
 
-func (d *IM0FilterDataBlock) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+func (d *PNIOIM0FilterDataBlock) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
 	// first encode all APIs
 	lenPacket := 0
 	for i := len(d.APIs) - 1; i >= 0; i-- {
@@ -1102,6 +1205,75 @@ func (r *PNIOIODControlRes) SerializeTo(b gopacket.SerializeBuffer, opts gopacke
 	return r.PNIORes.SerializeTo(b, opts)
 }
 
+type PNIOReleaseBlock struct {
+	BlockHeader PNIOBlockHeader
+	// 2 byte padding
+	ARUUID     []byte // 16 byte
+	SessionKey uint16
+	// 2 byte padding
+	ControlCommand         uint16
+	ControlBlockProperties uint16
+}
+
+func NewPNIOReleaseBlockFromReq(req PNIOReleaseBlock) *PNIOReleaseBlock {
+	res := &PNIOReleaseBlock{
+		BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderReleaseBlockRes),
+		ARUUID:      make([]byte, 16),
+		SessionKey:  req.SessionKey,
+	}
+	copy(res.ARUUID, req.ARUUID)
+	return res
+}
+
+func (p *PNIOReleaseBlock) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
+	if len(data) < 32 {
+		return errors.New("PNIOReleaseBlock too short")
+	}
+
+	// decode block header
+	err := p.BlockHeader.DecodeFromBytes(data[0:], df)
+	if err != nil {
+		return err
+	}
+
+	// 2 byte padding
+	p.ARUUID = make([]byte, 16)
+	copy(p.ARUUID, data[8:24])
+	p.SessionKey = binary.BigEndian.Uint16(data[24:26])
+	// 2 byte padding
+	p.ControlCommand = binary.BigEndian.Uint16(data[28:30])
+	p.ControlBlockProperties = binary.BigEndian.Uint16(data[30:32])
+	// TODO parse and check ControlBlockProperties Properties
+
+	return nil
+}
+
+func (d *PNIOReleaseBlock) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	lenPacket := 26
+	bytes, err := b.PrependBytes(lenPacket)
+	if err != nil {
+		return 0, err
+	}
+
+	copy(bytes[2:18], d.ARUUID)
+	binary.BigEndian.PutUint16(bytes[18:20], d.SessionKey)
+	binary.BigEndian.PutUint16(bytes[22:24], d.ControlCommand)
+	binary.BigEndian.PutUint16(bytes[24:26], d.ControlBlockProperties)
+
+	// encode block header
+	if opts.FixLengths {
+		d.BlockHeader.Length = uint16(lenPacket)
+	}
+
+	lenBlock, err := d.BlockHeader.SerializeTo(b, opts)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + lenBlock
+
+	return lenPacket, nil
+}
+
 type MultipleInterfaceModeNameOfDeviceValue bool
 
 const (
@@ -1189,6 +1361,7 @@ func (r *PNIOIODReadWriteReqHeader) SerializeTo(b gopacket.SerializeBuffer, opts
 	}
 
 	// 2 bytes reserved
+	binary.BigEndian.PutUint16(bytes[0:2], r.SeqNumber)
 	copy(bytes[2:18], r.ARUUID)
 	binary.BigEndian.PutUint32(bytes[18:22], r.API)
 	binary.BigEndian.PutUint16(bytes[22:24], r.SlotNumber)
@@ -1767,7 +1940,7 @@ func decodePNIOConnectReq(data []byte, p gopacket.PacketBuilder) error {
 	d := &PNIOIODConnectReq{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
-		log.Println("[decodePNIOConnectReq] PNIOIODConnectReq.DecodeFromBytes error:", err)
+		log.Println("[decodePNIOConnectReq] DecodeFromBytes error:", err)
 		return err
 	}
 	p.AddLayer(d)
@@ -1776,15 +1949,13 @@ func decodePNIOConnectReq(data []byte, p gopacket.PacketBuilder) error {
 }
 
 func decodePNIOReleaseReq(data []byte, p gopacket.PacketBuilder) error {
-	// d := &PNIOReq{}
-	// _, err := d.DecodeFromBytes(data, p)
-	// if err != nil {
-	// 	log.Println("[decodePNIOConnectReq] PNIOReq.DecodeFromBytes error:", err)
-	// 	return err
-	// }
-	// p.AddLayer(d)
-
-	log.Println("TODO - 2")
+	d := &PNIOIODReleaseReq{}
+	_, err := d.DecodeFromBytes(data, p)
+	if err != nil {
+		log.Println("[decodePNIOReleaseReq] DecodeFromBytes error:", err)
+		return err
+	}
+	p.AddLayer(d)
 
 	return nil
 }
@@ -1793,7 +1964,7 @@ func decodePNIOReadReq(data []byte, p gopacket.PacketBuilder) error {
 	d := &PNIOIODReadReq{}
 	_, err := d.DecodeFromBytes(data, p)
 	if err != nil {
-		log.Println("[decodePNIOReadReq] PNIOIODReadReq.DecodeFromBytes error:", err)
+		log.Println("[decodePNIOReadReq] DecodeFromBytes error:", err)
 		return err
 	}
 	p.AddLayer(d)
@@ -1805,7 +1976,7 @@ func decodePNIOWriteReq(data []byte, p gopacket.PacketBuilder) error {
 	d := &PNIOIODWriteMultipleReq{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
-		log.Println("[decodePNIOWriteReq] PNIOIODWriteMultipleReq.DecodeFromBytes error:", err)
+		log.Println("[decodePNIOWriteReq] DecodeFromBytes error:", err)
 		return err
 	}
 	p.AddLayer(d)
@@ -1817,7 +1988,7 @@ func decodePNIOControlReq(data []byte, p gopacket.PacketBuilder) error {
 	d := &PNIOIODControlReq{}
 	err := d.DecodeFromBytes(data, p)
 	if err != nil {
-		log.Println("[decodePNIOControlReq] PNIOIODControlReq.DecodeFromBytes error:", err)
+		log.Println("[decodePNIOControlReq] DecodeFromBytes error:", err)
 		return err
 	}
 	p.AddLayer(d)

@@ -231,10 +231,10 @@ type ProfinetDCP struct {
 	Xid           uint32
 	ResponseDelay uint16
 	BlockLength   uint16
-	Blocks        []ProfinetDCPBlock
+	Blocks        []PNDCPBlock
 }
 
-type ProfinetDCPBlock struct {
+type PNDCPBlock struct {
 	Option    PNDCPOption
 	Suboption uint8
 	Length    uint16
@@ -243,6 +243,25 @@ type ProfinetDCPBlock struct {
 }
 
 func (p ProfinetDCP) LayerType() gopacket.LayerType { return LayerTypeProfinetDCP }
+
+func NewPNDCPBlockFromData(option PNDCPOption, suboption uint8) *PNDCPBlock {
+	return &PNDCPBlock{Option: option, Suboption: suboption, Data: []byte{byte(PNDCPBlockErrorOK)}}
+}
+
+func NewPNDCPBlockOptionUnsupported(option PNDCPOption, suboption uint8) *PNDCPBlock {
+	return &PNDCPBlock{
+		Option:    PNDCPOptionControl,
+		Suboption: uint8(PNDCPSuboptionControlResponse),
+		BlockInfo: (uint16(option) << 8) | uint16(suboption),
+		Data:      []byte{byte(PNDCPBlockErrorOptionUnsupported)},
+	}
+}
+
+func NewPNDCPBlockSuboptionUnsupported(option PNDCPOption, suboption uint8) *PNDCPBlock {
+	res := NewPNDCPBlockOptionUnsupported(option, suboption)
+	res.Data = []byte{byte(PNDCPBlockErrorSuboptionUnsupported)}
+	return res
+}
 
 func (p *ProfinetDCP) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
 
@@ -308,7 +327,7 @@ func (d *ProfinetDCP) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) e
 	if d.ServiceID == PNDCPServiceIDGet {
 		// log.Println("Profinet get request", len)
 		for len >= 2 {
-			dcpBlock := &ProfinetDCPBlock{}
+			dcpBlock := &PNDCPBlock{}
 			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], false, true /*TODO*/, df)
 			if err != nil {
 				// log.Println("DCP Block DecodeFromBytes error:", err)
@@ -320,7 +339,7 @@ func (d *ProfinetDCP) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) e
 		}
 	} else {
 		for len >= 4 {
-			dcpBlock := &ProfinetDCPBlock{}
+			dcpBlock := &PNDCPBlock{}
 			decodedLen, err := dcpBlock.DecodeFromBytes(data[(10+int(d.BlockLength)-len):], true, d.ServiceID != PNDCPServiceIDIdentify, df)
 			if err != nil {
 				return err
@@ -334,7 +353,7 @@ func (d *ProfinetDCP) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) e
 	return nil
 }
 
-func (b *ProfinetDCPBlock) DecodeFromBytes(data []byte, doDecodeData, doDecodeBlockInfo bool, df gopacket.DecodeFeedback) (int, error) {
+func (b *PNDCPBlock) DecodeFromBytes(data []byte, doDecodeData, doDecodeBlockInfo bool, df gopacket.DecodeFeedback) (int, error) {
 	if len(data) < 2 {
 		return 0, errors.New("Profinet DCP block too small")
 	}
