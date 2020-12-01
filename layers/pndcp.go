@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 type PNFrameID uint16

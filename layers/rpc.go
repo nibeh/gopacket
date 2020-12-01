@@ -8,7 +8,7 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 // FizzleUUID fizzles 16 Byte UUID from big endian to little endian or vice versa

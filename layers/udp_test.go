@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 // testUDPPacketDNS is the packet:
@@ -137,8 +137,8 @@ func TestDNSQueryA(t *testing.T) {
 		t.Fatal("Invalid query decoding, not the right number of questions")
 	}
 
-	if string(dns.Questions[0].Name) != "www.google.com" {
-		t.Errorf("Invalid query decoding, expecting 'www.google.com', got '%s'",
+	if string(dns.Questions[0].Name) != "www.nibeh.com" {
+		t.Errorf("Invalid query decoding, expecting 'www.nibeh.com', got '%s'",
 			dns.Questions[0].Name)
 	}
 	if dns.Questions[0].Class != DNSClassIN {
@@ -211,12 +211,12 @@ func TestDNSRRA(t *testing.T) {
 		t.Fatal("Invalid query decoding, not the right number of additionals info")
 	}
 
-	if string(dns.Questions[0].Name) != "www.google.com" {
-		t.Errorf("Invalid query decoding, expecting 'www.google.com', got '%s'",
+	if string(dns.Questions[0].Name) != "www.nibeh.com" {
+		t.Errorf("Invalid query decoding, expecting 'www.nibeh.com', got '%s'",
 			dns.Questions[0].Name)
 	}
-	if string(dns.Answers[0].Name) != "www.google.com" {
-		t.Errorf("Invalid query decoding, expecting 'www.google.com', got '%d'",
+	if string(dns.Answers[0].Name) != "www.nibeh.com" {
+		t.Errorf("Invalid query decoding, expecting 'www.nibeh.com', got '%d'",
 			dns.Questions[0].Class)
 	}
 	if dns.Answers[0].Class != DNSClassIN {
@@ -245,10 +245,10 @@ func TestDNSRRA(t *testing.T) {
 			len(dns.Answers))
 	} else {
 		for i, want := range []string{
-			"ns1.google.com",
-			"ns2.google.com",
-			"ns3.google.com",
-			"ns4.google.com",
+			"ns1.nibeh.com",
+			"ns2.nibeh.com",
+			"ns3.nibeh.com",
+			"ns4.nibeh.com",
 		} {
 			if got := string(dns.Additionals[i].Name); got != want {
 				t.Errorf("got %q want %q", got, want)

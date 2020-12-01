@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 func FillWithBlank(d []byte) {

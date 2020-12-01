@@ -6,7 +6,7 @@
 
 // Enum types courtesy of...
 //   http://search.cpan.org/~mchapman/Net-CDP-0.09/lib/Net/CDP.pm
-//   https://code.google.com/p/ladvd/
+//   https://code.nibeh.com/p/ladvd/
 //   http://anonsvn.wireshark.org/viewvc/releases/wireshark-1.8.6/epan/dissectors/packet-cdp.c
 
 package layers
@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 // CDPTLVType is the type of each TLV value in a CiscoDiscovery packet.

@@ -19,13 +19,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/gopacket/pcap"
+	"github.com/nibeh/gopacket/pcap"
 )
 
 var mode = flag.String("mode", "basic", "One of: basic,filtered,timestamp")
 
 func generatePackets() {
-	if resp, err := http.Get("http://code.google.com"); err != nil {
+	if resp, err := http.Get("http://code.nibeh.com"); err != nil {
 		log.Printf("Could not get HTTP: %v", err)
 	} else {
 		resp.Body.Close()

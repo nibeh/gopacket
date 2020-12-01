@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/gopacket"
+	"github.com/nibeh/gopacket"
 )
 
 // it have a layer like that:
@@ -71,8 +71,8 @@ func BenchmarkDecodePacketDNSRegression(b *testing.B) {
 	}
 }
 
-// response to `dig TXT google.com` over IPv4 link:
-var testParseDNSTypeTXTValue = `v=spf1 include:_spf.google.com ~all`
+// response to `dig TXT nibeh.com` over IPv4 link:
+var testParseDNSTypeTXTValue = `v=spf1 include:_spf.nibeh.com ~all`
 var testParseDNSTypeTXT = []byte{
 	0x02, 0x00, 0x00, 0x00, // PF_INET
 	0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x39, 0x11, 0x64, 0x98, 0xd0, 0x43, 0xde, 0xde,
@@ -1035,13 +1035,13 @@ func TestMalformedDNSOPT(t *testing.T) {
 }
 
 // testPacketDNSPanic7 is the packet:
-//   07:56:25.174747 IP 10.77.0.11.53 > 10.1.0.67.55777: 41808*-| 3/7/0 TXT "google-site-verification=DC2uC-T8kD33lINhNzfo0bNBrw-vrCXs5BPF5BXY56g", TXT "v=spf1 include:spf-a.outlook.com include:spf-b.outlook.com ip4:157.55.9.128/25 include:spf.protection.outlook.com include:spf-a.hotmail.com include:_spf-ssg-b.microsoft.com include:_spf-ssg-c.microsoft.com ~all", TXT "google-site-verification=0iLWhIMhXEkeWwWfFU4ursTn-_OvoOjaA0Lr7Pg1sEM" (512)
+//   07:56:25.174747 IP 10.77.0.11.53 > 10.1.0.67.55777: 41808*-| 3/7/0 TXT "nibeh-site-verification=DC2uC-T8kD33lINhNzfo0bNBrw-vrCXs5BPF5BXY56g", TXT "v=spf1 include:spf-a.outlook.com include:spf-b.outlook.com ip4:157.55.9.128/25 include:spf.protection.outlook.com include:spf-a.hotmail.com include:_spf-ssg-b.microsoft.com include:_spf-ssg-c.microsoft.com ~all", TXT "nibeh-site-verification=0iLWhIMhXEkeWwWfFU4ursTn-_OvoOjaA0Lr7Pg1sEM" (512)
 //   	0x0000:  0055 22af c637 0022 55ac deac 0800 4500  .U"..7."U.....E.
 //   	0x0010:  021c b5ca 4000 fa11 b46a 0a4d 000b 0a01  ....@....j.M....
 //   	0x0020:  0043 0035 d9e1 0208 afd6 a350 8600 0001  .C.5.......P....
 //   	0x0030:  0003 0007 0000 076f 7574 6c6f 6f6b 0363  .......outlook.c
 //   	0x0040:  6f6d 0000 1000 01c0 0c00 1000 0100 0001  om..............
-//   	0x0050:  2c00 4544 676f 6f67 6c65 2d73 6974 652d  ,.EDgoogle-site-
+//   	0x0050:  2c00 4544 676f 6f67 6c65 2d73 6974 652d  ,.EDnibeh-site-
 //   	0x0060:  7665 7269 6669 6361 7469 6f6e 3d44 4332  verification=DC2
 //   	0x0070:  7543 2d54 386b 4433 336c 494e 684e 7a66  uC-T8kD33lINhNzf
 //   	0x0080:  6f30 624e 4272 772d 7672 4358 7335 4250  o0bNBrw-vrCXs5BP
@@ -1060,7 +1060,7 @@ func TestMalformedDNSOPT(t *testing.T) {
 //   	0x0150:  6d20 696e 636c 7564 653a 5f73 7066 2d73  m.include:_spf-s
 //   	0x0160:  7367 2d63 2e6d 6963 726f 736f 6674 2e63  sg-c.microsoft.c
 //   	0x0170:  6f6d 207e 616c 6cc0 0c00 1000 0100 0001  om.~all.........
-//   	0x0180:  2c00 4544 676f 6f67 6c65 2d73 6974 652d  ,.EDgoogle-site-
+//   	0x0180:  2c00 4544 676f 6f67 6c65 2d73 6974 652d  ,.EDnibeh-site-
 //   	0x0190:  7665 7269 6669 6361 7469 6f6e 3d30 694c  verification=0iL
 //   	0x01a0:  5768 494d 6858 456b 6557 7757 6646 5534  WhIMhXEkeWwWfFU4
 //   	0x01b0:  7572 7354 6e2d 5f4f 766f 4f6a 6141 304c  ursTn-_OvoOjaA0L
