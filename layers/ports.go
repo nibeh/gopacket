@@ -102,21 +102,27 @@ func (a UDPPort) LayerType() gopacket.LayerType {
 	return gopacket.LayerTypePayload
 }
 
+const (
+	UDPPortLayerTypeRPC gopacket.LayerType = 34964
+)
+
 var udpPortLayerType = [65536]gopacket.LayerType{
-	53:   LayerTypeDNS,
-	123:  LayerTypeNTP,
-	4789: LayerTypeVXLAN,
-	67:   LayerTypeDHCPv4,
-	68:   LayerTypeDHCPv4,
-	546:  LayerTypeDHCPv6,
-	547:  LayerTypeDHCPv6,
-	5060: LayerTypeSIP,
-	6343: LayerTypeSFlow,
-	6081: LayerTypeGeneve,
-	3784: LayerTypeBFD,
-	2152: LayerTypeGTPv1U,
-	623:  LayerTypeRMCP,
-	1812: LayerTypeRADIUS,
+	53:                  LayerTypeDNS,
+	123:                 LayerTypeNTP,
+	4789:                LayerTypeVXLAN,
+	67:                  LayerTypeDHCPv4,
+	68:                  LayerTypeDHCPv4,
+	546:                 LayerTypeDHCPv6,
+	547:                 LayerTypeDHCPv6,
+	5060:                LayerTypeSIP,
+	6343:                LayerTypeSFlow,
+	6081:                LayerTypeGeneve,
+	3784:                LayerTypeBFD,
+	2152:                LayerTypeGTPv1U,
+	623:                 LayerTypeRMCP,
+	1812:                LayerTypeRADIUS,
+	UDPPortLayerTypeRPC: LayerTypeRPC,
+	// 49152: LayerTypeRPC,
 }
 
 // RegisterUDPPortLayerType creates a new mapping between a UDPPort
