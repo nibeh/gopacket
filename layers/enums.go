@@ -8,7 +8,6 @@
 package layers
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 
@@ -24,14 +23,6 @@ type EnumMetadata struct {
 	Name string
 	// LayerType is the layer type implied by the given enum.
 	LayerType gopacket.LayerType
-}
-
-// errorFunc returns a decoder that spits out a specific error message.
-func errorFunc(msg string) gopacket.Decoder {
-	var e = errors.New(msg)
-	return gopacket.DecodeFunc(func([]byte, gopacket.PacketBuilder) error {
-		return e
-	})
 }
 
 // EthernetType is an enumeration of ethernet type values, and acts as a decoder
@@ -57,6 +48,7 @@ const (
 	EthernetTypeMPLSMulticast               EthernetType = 0x8848
 	EthernetTypeEAPOL                       EthernetType = 0x888e
 	EthernetTypeProfinet                    EthernetType = 0x8892
+	EthernetTypeERSPAN                      EthernetType = 0x88be
 	EthernetTypeQinQ                        EthernetType = 0x88a8
 	EthernetTypeLinkLayerDiscovery          EthernetType = 0x88cc
 	EthernetTypeEthernetCTP                 EthernetType = 0x9000
@@ -328,6 +320,7 @@ func initActualTypeData() {
 	EthernetTypeMetadata[EthernetTypeQinQ] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeDot1Q), Name: "Dot1Q", LayerType: LayerTypeDot1Q}
 	EthernetTypeMetadata[EthernetTypeTransparentEthernetBridging] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeEthernet), Name: "TransparentEthernetBridging", LayerType: LayerTypeEthernet}
 	EthernetTypeMetadata[EthernetTypeProfinet] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeProfinet), Name: "Profinet", LayerType: LayerTypeProfinet}
+	EthernetTypeMetadata[EthernetTypeERSPAN] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeERSPANII), Name: "ERSPAN Type II", LayerType: LayerTypeERSPANII}
 
 	IPProtocolMetadata[IPProtocolIPv4] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeIPv4), Name: "IPv4", LayerType: LayerTypeIPv4}
 	IPProtocolMetadata[IPProtocolTCP] = EnumMetadata{DecodeWith: gopacket.DecodeFunc(decodeTCP), Name: "TCP", LayerType: LayerTypeTCP}

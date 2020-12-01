@@ -126,25 +126,26 @@ type DNSResponseCode uint8
 
 // DNSResponseCode known values.
 const (
-	DNSResponseCodeNoErr    DNSResponseCode = 0  // No error
-	DNSResponseCodeFormErr  DNSResponseCode = 1  // Format Error                       [RFC1035]
-	DNSResponseCodeServFail DNSResponseCode = 2  // Server Failure                     [RFC1035]
-	DNSResponseCodeNXDomain DNSResponseCode = 3  // Non-Existent Domain                [RFC1035]
-	DNSResponseCodeNotImp   DNSResponseCode = 4  // Not Implemented                    [RFC1035]
-	DNSResponseCodeRefused  DNSResponseCode = 5  // Query Refused                      [RFC1035]
-	DNSResponseCodeYXDomain DNSResponseCode = 6  // Name Exists when it should not     [RFC2136]
-	DNSResponseCodeYXRRSet  DNSResponseCode = 7  // RR Set Exists when it should not   [RFC2136]
-	DNSResponseCodeNXRRSet  DNSResponseCode = 8  // RR Set that should exist does not  [RFC2136]
-	DNSResponseCodeNotAuth  DNSResponseCode = 9  // Server Not Authoritative for zone  [RFC2136]
-	DNSResponseCodeNotZone  DNSResponseCode = 10 // Name not contained in zone         [RFC2136]
-	DNSResponseCodeBadVers  DNSResponseCode = 16 // Bad OPT Version                    [RFC2671]
-	DNSResponseCodeBadSig   DNSResponseCode = 16 // TSIG Signature Failure             [RFC2845]
-	DNSResponseCodeBadKey   DNSResponseCode = 17 // Key not recognized                 [RFC2845]
-	DNSResponseCodeBadTime  DNSResponseCode = 18 // Signature out of time window       [RFC2845]
-	DNSResponseCodeBadMode  DNSResponseCode = 19 // Bad TKEY Mode                      [RFC2930]
-	DNSResponseCodeBadName  DNSResponseCode = 20 // Duplicate key name                 [RFC2930]
-	DNSResponseCodeBadAlg   DNSResponseCode = 21 // Algorithm not supported            [RFC2930]
-	DNSResponseCodeBadTruc  DNSResponseCode = 22 // Bad Truncation                     [RFC4635]
+	DNSResponseCodeNoErr     DNSResponseCode = 0  // No error
+	DNSResponseCodeFormErr   DNSResponseCode = 1  // Format Error                       [RFC1035]
+	DNSResponseCodeServFail  DNSResponseCode = 2  // Server Failure                     [RFC1035]
+	DNSResponseCodeNXDomain  DNSResponseCode = 3  // Non-Existent Domain                [RFC1035]
+	DNSResponseCodeNotImp    DNSResponseCode = 4  // Not Implemented                    [RFC1035]
+	DNSResponseCodeRefused   DNSResponseCode = 5  // Query Refused                      [RFC1035]
+	DNSResponseCodeYXDomain  DNSResponseCode = 6  // Name Exists when it should not     [RFC2136]
+	DNSResponseCodeYXRRSet   DNSResponseCode = 7  // RR Set Exists when it should not   [RFC2136]
+	DNSResponseCodeNXRRSet   DNSResponseCode = 8  // RR Set that should exist does not  [RFC2136]
+	DNSResponseCodeNotAuth   DNSResponseCode = 9  // Server Not Authoritative for zone  [RFC2136]
+	DNSResponseCodeNotZone   DNSResponseCode = 10 // Name not contained in zone         [RFC2136]
+	DNSResponseCodeBadVers   DNSResponseCode = 16 // Bad OPT Version                    [RFC2671]
+	DNSResponseCodeBadSig    DNSResponseCode = 16 // TSIG Signature Failure             [RFC2845]
+	DNSResponseCodeBadKey    DNSResponseCode = 17 // Key not recognized                 [RFC2845]
+	DNSResponseCodeBadTime   DNSResponseCode = 18 // Signature out of time window       [RFC2845]
+	DNSResponseCodeBadMode   DNSResponseCode = 19 // Bad TKEY Mode                      [RFC2930]
+	DNSResponseCodeBadName   DNSResponseCode = 20 // Duplicate key name                 [RFC2930]
+	DNSResponseCodeBadAlg    DNSResponseCode = 21 // Algorithm not supported            [RFC2930]
+	DNSResponseCodeBadTruc   DNSResponseCode = 22 // Bad Truncation                     [RFC4635]
+	DNSResponseCodeBadCookie DNSResponseCode = 23 // Bad/missing Server Cookie          [RFC7873]
 )
 
 func (drc DNSResponseCode) String() string {
@@ -187,6 +188,8 @@ func (drc DNSResponseCode) String() string {
 		return "Algorithm not supported"
 	case DNSResponseCodeBadTruc:
 		return "Bad Truncation"
+	case DNSResponseCodeBadCookie:
+		return "Bad Cookie"
 	}
 }
 
@@ -369,6 +372,10 @@ func (d *DNS) DecodeFromBytes(data []byte, df gopacket.DecodeFeedback) error {
 		if offset, err = d.Additionals[i].decode(data, offset, df, &d.buffer); err != nil {
 			d.Additionals = d.Additionals[:i] // strip off erroneous value
 			return err
+		}
+		// extract extended RCODE from OPT RRs, RFC 6891 section 6.1.3
+		if d.Additionals[i].Type == DNSTypeOPT {
+			d.ResponseCode = DNSResponseCode(uint8(d.ResponseCode) | uint8(d.Additionals[i].TTL>>20&0xF0))
 		}
 	}
 
@@ -713,8 +720,10 @@ func (rr *DNSResourceRecord) decode(data []byte, offset int, df gopacket.DecodeF
 	}
 	rr.Data = data[endq+10 : end]
 
-	if err = rr.decodeRData(data, endq+10, buffer); err != nil {
-		return 0, err
+	if rr.DataLength > 0 {
+		if err = rr.decodeRData(data[:end], endq+10, buffer); err != nil {
+			return 0, err
+		}
 	}
 
 	return endq + 10 + int(rr.DataLength), nil
@@ -871,6 +880,9 @@ func decodeOPTs(data []byte, offset int) ([]DNSOPT, error) {
 
 	for i := offset; i < end; {
 		opt := DNSOPT{}
+		if len(data) < i+4 {
+			return allOPT, fmt.Errorf("Malformed DNSOPT record.  Length %d < %d", len(data), i+4)
+		}
 		opt.Code = DNSOptionCode(binary.BigEndian.Uint16(data[i : i+2]))
 		l := binary.BigEndian.Uint16(data[i+2 : i+4])
 		if i+4+int(l) > end {
@@ -924,6 +936,9 @@ func (rr *DNSResourceRecord) decodeRData(data []byte, offset int, buffer *[]byte
 		if err != nil {
 			return err
 		}
+		if len(data) < endq+20 {
+			return errors.New("SOA too small")
+		}
 		rr.SOA.RName = name
 		rr.SOA.Serial = binary.BigEndian.Uint32(data[endq : endq+4])
 		rr.SOA.Refresh = binary.BigEndian.Uint32(data[endq+4 : endq+8])
@@ -931,6 +946,9 @@ func (rr *DNSResourceRecord) decodeRData(data []byte, offset int, buffer *[]byte
 		rr.SOA.Expire = binary.BigEndian.Uint32(data[endq+12 : endq+16])
 		rr.SOA.Minimum = binary.BigEndian.Uint32(data[endq+16 : endq+20])
 	case DNSTypeMX:
+		if len(data) < offset+2 {
+			return errors.New("MX too small")
+		}
 		rr.MX.Preference = binary.BigEndian.Uint16(data[offset : offset+2])
 		name, _, err := decodeName(data, offset+2, buffer, 1)
 		if err != nil {
@@ -938,10 +956,16 @@ func (rr *DNSResourceRecord) decodeRData(data []byte, offset int, buffer *[]byte
 		}
 		rr.MX.Name = name
 	case DNSTypeURI:
+		if len(rr.Data) < 4 {
+			return errors.New("URI too small")
+		}
 		rr.URI.Priority = binary.BigEndian.Uint16(data[offset : offset+2])
 		rr.URI.Weight = binary.BigEndian.Uint16(data[offset+2 : offset+4])
 		rr.URI.Target = rr.Data[4:]
 	case DNSTypeSRV:
+		if len(data) < offset+6 {
+			return errors.New("SRV too small")
+		}
 		rr.SRV.Priority = binary.BigEndian.Uint16(data[offset : offset+2])
 		rr.SRV.Weight = binary.BigEndian.Uint16(data[offset+2 : offset+4])
 		rr.SRV.Port = binary.BigEndian.Uint16(data[offset+4 : offset+6])
