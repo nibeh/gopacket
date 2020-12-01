@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nibeh/gopacket"
+	"github.com/google/gopacket"
 )
 
 func FillWithBlank(d []byte) {
@@ -907,6 +907,119 @@ func (d *PNIOIM234Data) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.Se
 	return lenPacket, nil
 }
 
+type PNIODiagnosisData struct {
+	BlockHeader      PNIOBlockHeader
+	API              uint32
+	ChannelDiagnosis PNIOChannelDiagnosis
+}
+
+func NewPNIODiagnosisData() *PNIODiagnosisData {
+	res := &PNIODiagnosisData{BlockHeader: NewPNIOBlockHeader(PNIOBlockHeaderDiagnosisData)}
+	res.BlockHeader.VersionLow = 1 // include API in response
+	return res
+}
+
+func (d *PNIODiagnosisData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	lenPacket, err := d.ChannelDiagnosis.SerializeTo(b, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	bytes, err := b.PrependBytes(4)
+	if err != nil {
+		return 0, err
+	}
+	binary.BigEndian.PutUint32(bytes[0:4], d.API)
+	lenPacket = lenPacket + len(bytes)
+
+	// encode block header
+	if opts.FixLengths {
+		d.BlockHeader.Length = uint16(lenPacket)
+	}
+
+	lenBlock, err := d.BlockHeader.SerializeTo(b, opts)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + lenBlock
+
+	return lenPacket, nil
+}
+
+type PNIOChannelDiagnosis struct {
+	SlotNumber              uint16
+	SubslotNumber           uint16
+	ChannelNumber           uint16
+	ChannelProperties       uint16 // TODO to flags
+	UserStructureIdentifier uint16
+	ChannelDiagnosisData    []PNIOChannelDiagnosisData
+}
+
+func (d *PNIOChannelDiagnosis) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	// first encode all APIs
+	lenPacket := 0
+	for i := len(d.ChannelDiagnosisData) - 1; i >= 0; i-- {
+		lenBlock, err := d.ChannelDiagnosisData[i].SerializeTo(b, opts)
+		if err != nil {
+			return lenPacket, err
+		}
+		lenPacket = lenPacket + lenBlock
+	}
+
+	bytes, err := b.PrependBytes(10)
+	if err != nil {
+		return lenPacket, err
+	}
+	lenPacket = lenPacket + len(bytes)
+	binary.BigEndian.PutUint16(bytes[0:2], d.SlotNumber)
+	binary.BigEndian.PutUint16(bytes[2:4], d.SubslotNumber)
+	binary.BigEndian.PutUint16(bytes[4:6], d.ChannelNumber)
+	binary.BigEndian.PutUint16(bytes[6:8], d.ChannelProperties)
+	binary.BigEndian.PutUint16(bytes[8:10], d.UserStructureIdentifier)
+
+	return lenPacket, nil
+}
+
+type PNIOChannelDiagnosisData struct {
+	ChannelNumber     uint16
+	ChannelProperties PNIOChannelProperties
+	ChannelErrorType  uint16
+}
+
+func (d *PNIOChannelDiagnosisData) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) (int, error) {
+	bytes, err := b.PrependBytes(6)
+	if err != nil {
+		return 0, err
+	}
+	binary.BigEndian.PutUint16(bytes[0:2], d.ChannelNumber)
+	binary.BigEndian.PutUint16(bytes[2:4], d.ChannelProperties.toUint16())
+	binary.BigEndian.PutUint16(bytes[4:6], d.ChannelErrorType)
+
+	return len(bytes), nil
+}
+
+type PNIOChannelProperties struct {
+	Direction    uint8 // Bit 13 - 15	=> TODO other type
+	Specifier    uint8 // Bit 11 - 12	=> TODO other type
+	Maintenance  uint8 // Bit 9 - 10	=> TODO other type
+	Accumulative bool  // Bit 8
+	Type         uint8 // Bit 0 - 7
+}
+
+func (p PNIOChannelProperties) toUint16() uint16 {
+	var r uint16
+
+	r = r | ((uint16(p.Direction) << 13) & 0xe000)
+	r = r | ((uint16(p.Specifier) << 11) & 0x1800)
+	r = r | ((uint16(p.Maintenance) << 9) & 0x0600)
+	if p.Accumulative {
+		r = r | 0x0100
+	}
+	r = r | uint16(p.Type)
+
+	return r
+}
+
 // TODO combine this with another block?
 type PNIORealIdentificationData struct {
 	BlockHeader  PNIOBlockHeader
@@ -1403,10 +1516,13 @@ const (
 
 	PNIOIODReadWriteReqExpectedIdentificationDataAR PNIOIODReadWriteReqHeaderIndex = 0xe000
 	PNIOIODReadWriteReqRealIdentificationDataAR     PNIOIODReadWriteReqHeaderIndex = 0xe001
+	PNIOIODReadWriteReqModuleDiffBlockAR            PNIOIODReadWriteReqHeaderIndex = 0xe002
 
 	PNIOIODReadWriteReqWriteMultiple PNIOIODReadWriteReqHeaderIndex = 0xe040
 
 	PNIOIODReadWriteReqRealIdentificationDataAPI PNIOIODReadWriteReqHeaderIndex = 0xf000
+	PNIOIODReadWriteReqDiagnosisAPI              PNIOIODReadWriteReqHeaderIndex = 0xf00c
+	PNIOIODReadWriteReqDiagnosisARDataAPI        PNIOIODReadWriteReqHeaderIndex = 0xf020
 
 	PNIOIODReadWriteReqIM0FilterData PNIOIODReadWriteReqHeaderIndex = 0xf840
 )
